@@ -1,0 +1,36 @@
+{
+  "check_interval": 300,
+  "ssh_timeout": 20,
+  "retention_days": 90,
+  "telegram": { "bot_token": "", "chat_id": "" },
+  "servers": {
+    "web-01": {
+      "host": "web01.example.com",
+      "user": "root",
+      "key": "~/.ssh/id_rsa",
+      "cockpit_url": "",
+      "services": [
+        "nginx",
+        { "name": "ssh-port", "type": "port", "port": 22 },
+        { "name": "app", "type": "docker", "container": "myapp" },
+        { "name": "health", "type": "http", "url": "http://127.0.0.1:8080/health", "expect_code": 200 }
+      ],
+      "custom_checks": [
+        {
+          "name": "disk-free",
+          "command": "df -P / | awk 'NR==2{print 100-$5+0}'",
+          "expect": "> 10",
+          "severity": "warning",
+          "description": "Root filesystem free percent"
+        }
+      ]
+    },
+    "vpn-01": {
+      "host": "10.0.0.5",
+      "user": "admin",
+      "services": [
+        { "name": "wg", "type": "wireguard", "iface": "wg0" }
+      ]
+    }
+  }
+}

@@ -927,8 +927,43 @@
             .ssh-result { font-size: 0.82rem; color: var(--text-muted); }
             .settings-actions { display: flex; gap: 10px; margin-top: 6px; }
             #cfg-msg { margin-top: 12px; font-size: 0.85rem; color: var(--text-muted); }
+            .ssh-result.ok { color: var(--success-color); }
+            .ssh-result.warn { color: var(--warning-color); }
+            .ssh-result.fail { color: var(--danger-color); }
+
+            /* Service column headers */
+            .svc-cols {
+                display: grid; grid-template-columns: 1.3fr 0.9fr 1.7fr auto;
+                gap: 8px; margin-bottom: 5px;
+            }
+            .svc-cols > span {
+                font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em;
+                color: var(--text-muted); display: flex; align-items: center;
+            }
+
+            /* Hover help tooltips */
+            .help {
+                font-size: 0.72rem; color: var(--text-muted); cursor: help;
+                margin-left: 5px; position: relative; outline: none;
+            }
+            .help:hover, .help:focus { color: var(--accent-color); }
+            .help::after {
+                content: attr(data-tip);
+                position: absolute; left: 0; bottom: 150%;
+                background: var(--sidebar-bg); color: var(--text-color);
+                border: 1px solid var(--border-color); border-radius: 8px;
+                padding: 8px 11px; width: max-content; max-width: 260px;
+                font-size: 0.72rem; line-height: 1.4; font-weight: 400;
+                text-transform: none; letter-spacing: normal; white-space: normal;
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+                opacity: 0; visibility: hidden; transition: opacity 0.12s;
+                z-index: 60; pointer-events: none;
+            }
+            .help:hover::after, .help:focus::after { opacity: 1; visibility: visible; }
+
             @media (max-width: 720px) {
                 .svc-row { grid-template-columns: 1fr 1fr; }
+                .svc-cols { display: none; }
             }
         </style>
     </head>

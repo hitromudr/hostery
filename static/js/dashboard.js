@@ -2,6 +2,21 @@ const API = "/api";
 let currentStats = {};
 let statsInterval, timeInterval;
 
+const POWER_EVENT_LABELS = {
+  under_voltage: ["Undervoltage", "var(--danger-color)"],
+  under_voltage_resolved: ["Voltage normalised", "var(--success-color)"],
+  under_voltage_at_boot: ["Undervoltage (boot)", "var(--warning-color)"],
+  throttled: ["Throttled", "var(--danger-color)"],
+  throttled_resolved: ["Throttle released", "var(--success-color)"],
+  throttled_at_boot: ["Throttled (boot)", "var(--warning-color)"],
+  arm_freq_capped: ["Freq capped", "var(--warning-color)"],
+  arm_freq_capped_resolved: ["Freq restored", "var(--success-color)"],
+  arm_freq_capped_at_boot: ["Freq capped (boot)", "var(--warning-color)"],
+  soft_temp_limit: ["Temp limit", "var(--warning-color)"],
+  soft_temp_limit_resolved: ["Temp normalised", "var(--success-color)"],
+  soft_temp_limit_at_boot: ["Temp limit (boot)", "var(--warning-color)"],
+};
+
 // --- Navigation & View Logic ---
 
 function showView(viewName, skipHash) {
@@ -291,25 +306,10 @@ function renderPowerEvents(events) {
     return;
   }
 
-  const eventLabels = {
-    under_voltage: ["Undervoltage", "var(--danger-color)"],
-    under_voltage_resolved: ["Voltage normalised", "var(--success-color)"],
-    under_voltage_at_boot: ["Undervoltage (boot)", "var(--warning-color)"],
-    throttled: ["Throttled", "var(--danger-color)"],
-    throttled_resolved: ["Throttle released", "var(--success-color)"],
-    throttled_at_boot: ["Throttled (boot)", "var(--warning-color)"],
-    arm_freq_capped: ["Freq capped", "var(--warning-color)"],
-    arm_freq_capped_resolved: ["Freq restored", "var(--success-color)"],
-    arm_freq_capped_at_boot: ["Freq capped (boot)", "var(--warning-color)"],
-    soft_temp_limit: ["Temp limit", "var(--warning-color)"],
-    soft_temp_limit_resolved: ["Temp normalised", "var(--success-color)"],
-    soft_temp_limit_at_boot: ["Temp limit (boot)", "var(--warning-color)"],
-  };
-
   container.innerHTML = events.slice().reverse().map(e => {
     const ts = new Date(e.timestamp);
     const time = ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    const [label, color] = eventLabels[e.event_type] || [e.event_type, "var(--text-color)"];
+    const [label, color] = POWER_EVENT_LABELS[e.event_type] || [e.event_type, "var(--text-color)"];
     const meta = pwrEventMeta(e);
     return `<div class="pwr-event-item">
       <span class="pwr-event-time">${time}</span>
@@ -348,25 +348,10 @@ function showPowerBlock(idx) {
     return;
   }
 
-  const eventLabels = {
-    under_voltage: ["Undervoltage", "var(--danger-color)"],
-    under_voltage_resolved: ["Voltage normalised", "var(--success-color)"],
-    under_voltage_at_boot: ["Undervoltage (boot)", "var(--warning-color)"],
-    throttled: ["Throttled", "var(--danger-color)"],
-    throttled_resolved: ["Throttle released", "var(--success-color)"],
-    throttled_at_boot: ["Throttled (boot)", "var(--warning-color)"],
-    arm_freq_capped: ["Freq capped", "var(--warning-color)"],
-    arm_freq_capped_resolved: ["Freq restored", "var(--success-color)"],
-    arm_freq_capped_at_boot: ["Freq capped (boot)", "var(--warning-color)"],
-    soft_temp_limit: ["Temp limit", "var(--warning-color)"],
-    soft_temp_limit_resolved: ["Temp normalised", "var(--success-color)"],
-    soft_temp_limit_at_boot: ["Temp limit (boot)", "var(--warning-color)"],
-  };
-
   const eventsHtml = block.details.map(e => {
     const ts = new Date(e.timestamp);
     const time = ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    const [label, color] = eventLabels[e.event_type] || [e.event_type, "var(--text-color)"];
+    const [label, color] = POWER_EVENT_LABELS[e.event_type] || [e.event_type, "var(--text-color)"];
     const meta = pwrEventMeta(e);
     return `<div class="pwr-event-item">
       <span class="pwr-event-time">${time}</span>

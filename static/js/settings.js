@@ -1,6 +1,12 @@
 let _cfg = null;
 let _settingsLoaded = false;
 
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
 async function settingsInit() {
   if (_settingsLoaded) return;
   _settingsLoaded = true;
@@ -21,9 +27,9 @@ function renderSettings() {
   root.innerHTML = `
     <div class="card">
       <div class="card-title"><span>Global</span></div>
-      <label>Check interval (s) <input id="cfg-interval" type="number" value="${_cfg.check_interval || 300}"></label>
+      <label>Check interval (s) <input id="cfg-interval" type="number" value="${esc(_cfg.check_interval || 300)}"></label>
       <label>Telegram bot token <input id="cfg-tg-token" type="password" placeholder="(unchanged)" value=""></label>
-      <label>Telegram chat id <input id="cfg-tg-chat" value="${tg.chat_id || ""}"></label>
+      <label>Telegram chat id <input id="cfg-tg-chat" value="${esc(tg.chat_id || "")}"></label>
     </div>
     <div id="cfg-servers">${Object.keys(servers).map(serverCardHTML).join("")}</div>
     <button class="btn btn-ghost" onclick="addServer()"><i class="fas fa-plus"></i> Add server</button>
@@ -34,18 +40,18 @@ function renderSettings() {
 function serverCardHTML(name) {
   const s = _cfg.servers[name];
   const services = (s.services || []).map((svc, i) => serviceRowHTML(name, svc, i)).join("");
-  return `<div class="card" data-server="${name}">
+  return `<div class="card" data-server="${esc(name)}">
     <div class="card-title">
-      <input class="srv-name" value="${name}" data-orig="${name}">
-      <button class="btn btn-danger" onclick="removeServer('${name}')"><i class="fas fa-trash"></i></button>
+      <input class="srv-name" value="${esc(name)}" data-orig="${esc(name)}">
+      <button class="btn btn-danger" onclick="removeServer('${esc(name)}')"><i class="fas fa-trash"></i></button>
     </div>
-    <label>host <input class="srv-host" value="${s.host || ""}"></label>
-    <label>user <input class="srv-user" value="${s.user || ""}"></label>
-    <label>key path <input class="srv-key" value="${s.key || ""}"></label>
-    <label>cockpit_url <input class="srv-cockpit" value="${s.cockpit_url || ""}"></label>
+    <label>host <input class="srv-host" value="${esc(s.host || "")}"></label>
+    <label>user <input class="srv-user" value="${esc(s.user || "")}"></label>
+    <label>key path <input class="srv-key" value="${esc(s.key || "")}"></label>
+    <label>cockpit_url <input class="srv-cockpit" value="${esc(s.cockpit_url || "")}"></label>
     <div class="srv-services">${services}</div>
-    <button class="btn btn-ghost" onclick="addService('${name}')">+ service</button>
-    <button class="btn btn-ghost" onclick="testSsh('${name}')">Test connection</button>
+    <button class="btn btn-ghost" onclick="addService('${esc(name)}')">+ service</button>
+    <button class="btn btn-ghost" onclick="testSsh('${esc(name)}')">Test connection</button>
     <span class="ssh-result"></span>
   </div>`;
 }
@@ -57,9 +63,9 @@ function serviceRowHTML(server, svc, i) {
   const param = { systemctl: o.unit, port: o.port, docker: o.container,
                   interface: o.iface, wireguard: o.iface, http: o.url }[o.type || "systemctl"] || "";
   return `<div class="svc-row">
-    <input class="svc-name" value="${o.name || ""}" placeholder="name">
+    <input class="svc-name" value="${esc(o.name || "")}" placeholder="name">
     <select class="svc-type">${opts}</select>
-    <input class="svc-param" value="${param}" placeholder="unit/port/container/iface/url">
+    <input class="svc-param" value="${esc(param)}" placeholder="unit/port/container/iface/url">
     <button onclick="this.parentElement.remove()">×</button>
   </div>`;
 }

@@ -1,108 +1,110 @@
+**Русский** · [English](README.en.md)
+
 # hostery
 
-hostery is a generic self-hosted server fleet monitor. It runs as a lightweight Flask web application and provides four views: a local host **Dashboard** (CPU temperature, frequency, fan speed, load average, RAM, disk, I/O rates; a Raspberry Pi Power Health module is auto-enabled when `vcgencmd` is detected on the host), a configurable SSH-based **Net View** that polls a fleet of remote servers and shows 24-hour availability timelines, 30-day uptime percentages, incident history, and Telegram alerts, a **Settings** tab with a live config editor (no restart needed), and a **Cockpit** bridge that detects, installs, and links Red Hat Cockpit on each managed server.
+hostery — это generic self-hosted монитор флота серверов. Запускается как лёгкое веб-приложение на Flask и предоставляет четыре раздела: локальный **Dashboard** хоста (температура CPU, частота, обороты вентилятора, load average, RAM, диск, скорости I/O; модуль Power Health для Raspberry Pi включается автоматически, если на хосте обнаружен `vcgencmd`), настраиваемый **Net View** на базе SSH, который опрашивает флот удалённых серверов и показывает 24-часовые таймлайны доступности, проценты аптайма за 30 дней, историю инцидентов и Telegram-алёрты, вкладку **Settings** с живым редактором конфига (без перезапуска) и мост к **Cockpit**, который определяет, устанавливает и линкует Red Hat Cockpit на каждом управляемом сервере.
 
-## Quick start (Docker)
+## Быстрый старт (Docker)
 
 ```bash
 cp config/config.example.json config/config.json
-# Edit config/config.json — add your servers, SSH user/key, services to monitor
+# Отредактируйте config/config.json — добавьте серверы, SSH user/key, сервисы для мониторинга
 docker compose up -d
 ```
 
-Open `http://127.0.0.1:5000`.
+Откройте `http://127.0.0.1:5000`.
 
-On first run, if `HOSTERY_AUTH` is not set, a random admin password is generated and printed in the logs. Read it with:
+При первом запуске, если `HOSTERY_AUTH` не задан, генерируется случайный пароль для пользователя `admin` и выводится в логах. Прочитать его:
 
 ```bash
 docker compose logs | grep password
 ```
 
-By default the container mounts `~/.ssh` into `/root/.ssh` (read-only) so your existing SSH keys are available for fleet polling. Point to a different directory with the `SSH_KEYS_DIR` environment variable:
+По умолчанию контейнер монтирует `~/.ssh` в `/root/.ssh` (только чтение), чтобы существующие SSH-ключи были доступны для опроса флота. Указать другой каталог можно через переменную окружения `SSH_KEYS_DIR`:
 
 ```bash
 SSH_KEYS_DIR=/home/youruser/.ssh docker compose up -d
 ```
 
-## Quick start (clone & run)
+## Быстрый старт (clone & run)
 
 ```bash
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
 cp config/config.example.json config/config.json
-# Edit config/config.json
+# Отредактируйте config/config.json
 ./venv/bin/python app.py
 ```
 
-Open `http://127.0.0.1:5000`.
+Откройте `http://127.0.0.1:5000`.
 
-Two environment variables control the bind address and port:
+Адрес и порт прослушивания задаются двумя переменными окружения:
 
-| Variable | Default | Description |
+| Переменная | По умолчанию | Описание |
 |---|---|---|
-| `HOSTERY_BIND` | `127.0.0.1` | Interface to listen on (`0.0.0.0` to expose on all interfaces) |
-| `HOSTERY_PORT` | `5000` | TCP port |
+| `HOSTERY_BIND` | `127.0.0.1` | Интерфейс прослушивания (`0.0.0.0` — на всех интерфейсах) |
+| `HOSTERY_PORT` | `5000` | TCP-порт |
 
-## Authentication
+## Аутентификация
 
-HTTP Basic Auth is enabled by default. The behaviour depends on the `HOSTERY_AUTH` environment variable:
+HTTP Basic Auth включена по умолчанию. Поведение зависит от переменной окружения `HOSTERY_AUTH`:
 
-- **Unset (default)** — a random password for the `admin` user is generated at startup and printed in the logs. Read it once, then optionally fix it with `HOSTERY_AUTH`.
-- **`HOSTERY_AUTH=user:pass`** — credentials are fixed to the given values.
-- **`HOSTERY_AUTH=off`** — authentication is disabled. Only use this when another layer (mTLS, a reverse-proxy auth gate, SSO) sits in front of hostery. Never expose an unauthenticated instance directly to the internet.
+- **Не задана (по умолчанию)** — при старте генерируется случайный пароль для пользователя `admin` и выводится в логах. Прочитайте его один раз, при желании зафиксируйте через `HOSTERY_AUTH`.
+- **`HOSTERY_AUTH=user:pass`** — учётные данные фиксируются на указанных значениях.
+- **`HOSTERY_AUTH=off`** — аутентификация отключена. Используйте только когда впереди стоит другой слой (mTLS, auth на reverse-proxy, SSO). Никогда не выставляйте инстанс без аутентификации напрямую в интернет.
 
-## Configuration
+## Конфигурация
 
-Configuration lives in `config/config.json`. The annotated example is at `config/config.example.json`.
+Конфигурация лежит в `config/config.json`. Аннотированный пример — в `config/config.example.json`.
 
-**Top-level keys:**
+**Ключи верхнего уровня:**
 
-| Key | Description |
+| Ключ | Описание |
 |---|---|
-| `check_interval` | Seconds between fleet polls (default 300) |
-| `ssh_timeout` | SSH connection timeout in seconds |
-| `retention_days` | How many days of check history to keep |
-| `telegram` | `bot_token` and `chat_id` — both must be non-empty to enable alerts |
-| `servers` | Map of server name → server object |
+| `check_interval` | Секунды между опросами флота (по умолчанию 300) |
+| `ssh_timeout` | Таймаут SSH-подключения в секундах |
+| `retention_days` | Сколько дней хранить историю проверок |
+| `telegram` | `bot_token` и `chat_id` — оба должны быть непустыми, чтобы включить алёрты |
+| `servers` | Словарь «имя сервера → объект сервера» |
 
-**Server object:**
+**Объект сервера:**
 
-| Key | Description |
+| Ключ | Описание |
 |---|---|
-| `host` | Hostname or IP |
-| `user` | SSH login user |
-| `key` | Path to private key (e.g. `~/.ssh/id_rsa`) |
-| `cockpit_url` | Optional Cockpit URL override; auto-detected if blank |
-| `services` | List of service checks (see below) |
-| `custom_checks` | List of custom shell checks (see below) |
+| `host` | Хост или IP |
+| `user` | SSH-пользователь |
+| `key` | Путь к приватному ключу (напр. `~/.ssh/id_rsa`) |
+| `cockpit_url` | Необязательное переопределение URL Cockpit; при пустом значении определяется автоматически |
+| `services` | Список проверок сервисов (см. ниже) |
+| `custom_checks` | Список произвольных shell-проверок (см. ниже) |
 
-**Service check types:**
+**Типы проверок сервисов:**
 
-A bare string is shorthand for a systemd unit check (`{"type": "systemctl", "unit": "<name>"}`).
+Голая строка — это сокращение для проверки systemd-юнита (`{"type": "systemctl", "unit": "<name>"}`).
 
-| Type | Extra fields | Checks |
+| Тип | Доп. поля | Что проверяет |
 |---|---|---|
-| `systemctl` | `unit` | Unit is active via `systemctl is-active` |
-| `port` | `port` | TCP port is open |
-| `docker` | `container` | Container is running |
-| `interface` | `iface` | Network interface is UP |
-| `wireguard` | `iface` | WireGuard interface is UP and has a recent handshake |
-| `http` | `url`, `expect_code` | HTTP GET returns the expected status code |
+| `systemctl` | `unit` | Юнит активен через `systemctl is-active` |
+| `port` | `port` | TCP-порт открыт |
+| `docker` | `container` | Контейнер запущен |
+| `interface` | `iface` | Сетевой интерфейс в состоянии UP |
+| `wireguard` | `iface` | Интерфейс WireGuard в UP и есть свежий handshake |
+| `http` | `url`, `expect_code` | HTTP GET возвращает ожидаемый код статуса |
 
-**Custom checks (`custom_checks`):**
+**Произвольные проверки (`custom_checks`):**
 
-Each entry runs an arbitrary shell command over SSH and evaluates its stdout output against a numeric expression.
+Каждая запись выполняет произвольную shell-команду по SSH и сравнивает её stdout с числовым выражением.
 
-| Field | Required | Description |
+| Поле | Обязательно | Описание |
 |---|---|---|
-| `name` | yes | Human-readable label |
-| `command` | yes | Shell command to run on the remote host (stdout is captured as a number) |
-| `expect` | yes | Numeric comparison, e.g. `"> 0"`, `"== 1"`, `"<= 20"` |
-| `warn_if` | no | Secondary threshold expression that triggers a warning (non-critical) alert |
-| `severity` | no | `critical` (default) or `warning` |
-| `description` | no | Displayed in the UI as a tooltip or label |
+| `name` | да | Человекочитаемая метка |
+| `command` | да | Команда на удалённом хосте (stdout считывается как число) |
+| `expect` | да | Числовое сравнение, напр. `"> 0"`, `"== 1"`, `"<= 20"` |
+| `warn_if` | нет | Дополнительный порог, дающий warning (не critical) алёрт |
+| `severity` | нет | `critical` (по умолчанию) или `warning` |
+| `description` | нет | Показывается в UI как подпись/тултип |
 
-Example — alert if root filesystem free space drops below 10 %:
+Пример — алёрт, если свободное место на корневой ФС опускается ниже 10 %:
 
 ```json
 {
@@ -114,25 +116,36 @@ Example — alert if root filesystem free space drops below 10 %:
 }
 ```
 
-Configuration hot-reloads: edits saved through the **Settings** tab (or directly to the file) take effect on the next poll cycle without restarting hostery.
+Конфиг подхватывается на лету: правки, сохранённые через вкладку **Settings** (или прямо в файле), вступают в силу на следующем цикле опроса без перезапуска hostery.
 
-## Raspberry Pi module
+## Модуль Raspberry Pi
 
-When `vcgencmd` is present on the host, hostery automatically enables a **Power Health** panel in the Dashboard. It shows throttle and undervoltage event history, current core voltage, and PMIC power readings. On non-Pi hardware the panel is absent and no related code runs.
+Если на хосте присутствует `vcgencmd`, hostery автоматически включает в Dashboard панель **Power Health**. Она показывает историю событий throttle и undervoltage, текущее напряжение ядра и показания PMIC по мощности. На не-Pi оборудовании панель отсутствует, и связанный код не выполняется.
 
 ## Cockpit
 
-Each server entry in Net View shows a Cockpit status chip. Two actions are available:
+Каждая запись сервера в Net View показывает чип статуса Cockpit. Доступны два действия:
 
-- **Install Cockpit** — connects over SSH and runs the official Cockpit install command. The target server must allow root login or have passwordless `sudo` configured for the SSH user. The install opens port 9090 on the target; hostery does **not** automatically add firewall rules.
-- **System console** — opens or links the Cockpit web UI for that server.
+- **Install Cockpit** — подключается по SSH и выполняет официальную команду установки Cockpit. На целевом сервере должен быть разрешён вход под root или настроен passwordless `sudo` для SSH-пользователя. Установка открывает порт 9090 на целевом хосте; hostery **не** добавляет правила фаервола автоматически.
+- **System console** — открывает/линкует веб-интерфейс Cockpit для этого сервера.
 
-Cockpit has no REST API, so hostery links and installs it rather than driving it programmatically. The install action is the only state-changing remote operation hostery performs and requires an explicit click in the UI.
+У Cockpit нет REST API, поэтому hostery линкует и устанавливает его, а не управляет программно. Установка — единственная операция hostery, изменяющая состояние удалённого хоста, и требует явного клика в UI.
 
-## Security note
+## О безопасности
 
-`command` fields in `custom_checks` run operator-authored shell commands on remote hosts over SSH. This is intentional — the operator controls both the hostery instance and the target hosts. The HTTP Basic Auth gate is the access control boundary for the hostery UI itself.
+Поля `command` в `custom_checks` выполняют произвольные shell-команды оператора на удалённых хостах по SSH. Это сделано намеренно — оператор контролирует и инстанс hostery, и целевые хосты. Граница контроля доступа к самому UI hostery — шлюз HTTP Basic Auth.
 
-The Cockpit install is the only action that modifies a remote host's state. It is triggered by an explicit UI action, not by a scheduled poll.
+Установка Cockpit — единственное действие, изменяющее состояние удалённого хоста. Оно запускается явным действием в UI, а не по расписанию опроса.
 
-Never disable authentication (`HOSTERY_AUTH=off`) unless a stronger auth layer (mTLS, reverse-proxy auth, SSO) is enforced upstream.
+Не отключайте аутентификацию (`HOSTERY_AUTH=off`), пока выше по стеку не обеспечен более сильный слой аутентификации (mTLS, auth на reverse-proxy, SSO).
+
+## Разработка и тесты
+
+```bash
+./venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+./venv/bin/playwright install chromium
+./venv/bin/pytest                      # unit-тесты (E2E исключены по умолчанию)
+./venv/bin/pytest tests/e2e -m e2e     # Playwright end-to-end тесты
+```
+
+Unit-тесты покрывают fallback-логику сенсоров, конфиг-driven модель проверок, машинерию таймлайнов/инцидентов, валидацию конфига, аутентификацию и хелперы Cockpit. E2E-набор поднимает приложение против детерминированного тест-флота (фейк-флот на `127.0.0.1`, чтобы SSH-действия падали быстро) и прогоняет SPA в headless-браузере по всем основным сценариям (auth-гейт, метрики дашборда, навигация, рендер флота, редактор конфига, валидация и контролы Cockpit).

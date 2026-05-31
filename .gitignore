@@ -7,3 +7,7 @@ config/config.json
 *.db-wal
 *.db-shm
 .pytest_cache/
+
+# Local Claude Code guidance / specs (not part of the public project)
+CLAUDE.md
+docs/superpowers/

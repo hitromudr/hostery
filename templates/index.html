@@ -1,0 +1,1471 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>hostery</title>
+        <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+            rel="stylesheet"
+        />
+        <style>
+            :root {
+                --bg-color: #1a1b26;
+                --sidebar-bg: #16161e;
+                --card-bg: #24283b;
+                --text-color: #c0caf5;
+                --text-muted: #565f89;
+                --accent-color: #7aa2f7;
+                --success-color: #9ece6a;
+                --warning-color: #e0af68;
+                --danger-color: #f7768e;
+                --border-color: #414868;
+                --progress-bg: #414868;
+                --progress-fill: #7aa2f7;
+            }
+
+            body {
+                font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+                background-color: var(--bg-color);
+                color: var(--text-color);
+                margin: 0;
+                display: flex;
+                height: 100vh;
+                overflow: hidden;
+            }
+
+            /* Sidebar */
+            .sidebar {
+                width: 250px;
+                min-width: 60px;
+                max-width: 400px;
+                background-color: var(--sidebar-bg);
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                border-right: 1px solid var(--border-color);
+                flex-shrink: 0;
+                position: relative;
+            }
+            .sidebar-resize-handle {
+                position: absolute;
+                top: 0;
+                right: -3px;
+                width: 6px;
+                height: 100%;
+                cursor: col-resize;
+                z-index: 30;
+            }
+            .sidebar-resize-handle:hover,
+            .sidebar-resize-handle.dragging {
+                background: var(--accent-color);
+                opacity: 0.4;
+            }
+            .sidebar.collapsed {
+                width: 60px;
+                padding: 20px 8px;
+            }
+            .sidebar.collapsed .nav-item span,
+            .sidebar.collapsed .logo span {
+                display: none;
+            }
+            .sidebar.collapsed .nav-item {
+                justify-content: center;
+                padding: 12px 0;
+                gap: 0;
+            }
+            .sidebar.collapsed .logo {
+                justify-content: center;
+                gap: 0;
+            }
+            .sidebar.collapsed .logo i.fa-rocket {
+                display: none;
+            }
+            .sidebar.collapsed #sidebar-chat-section > *:not(.nav-item) {
+                display: none;
+            }
+            .sidebar-toggle-icon {
+                margin-left: auto;
+                font-size: 0.85rem;
+                cursor: pointer;
+                color: var(--text-muted);
+                padding: 4px 6px;
+                border-radius: 4px;
+                transition: color 0.15s, background 0.15s;
+            }
+            .sidebar-toggle-icon:hover {
+                color: var(--text-color);
+                background: var(--card-bg);
+            }
+            .sidebar.collapsed .sidebar-toggle-icon {
+                margin-left: 0;
+                color: var(--accent-color);
+                font-size: 1rem;
+            }
+
+            .logo {
+                font-size: 1.5rem;
+                font-weight: bold;
+                color: var(--accent-color);
+                margin-bottom: 40px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+
+            .nav-item {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 12px 15px;
+                color: var(--text-muted);
+                text-decoration: none;
+                border-radius: 8px;
+                transition: all 0.2s;
+                margin-bottom: 5px;
+                cursor: pointer;
+            }
+
+            .nav-item:hover,
+            .nav-item.active {
+                background-color: var(--card-bg);
+                color: var(--text-color);
+            }
+
+            .nav-item i {
+                width: 20px;
+                text-align: center;
+            }
+
+            /* Main Content */
+            .main-content {
+                flex-grow: 1;
+                position: relative;
+                overflow: hidden;
+            }
+
+            /* Views */
+            .view-section {
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                width: 100%;
+                padding: 30px;
+                overflow-y: auto;
+                box-sizing: border-box;
+                position: absolute;
+                top: 0;
+                left: 0;
+                visibility: hidden;
+                opacity: 0;
+                z-index: 0;
+                background-color: var(--bg-color);
+                transition: opacity 0.2s ease;
+            }
+
+            .view-section.active {
+                visibility: visible;
+                opacity: 1;
+                z-index: 10;
+            }
+
+            /* Iframe View */
+            #view-frame {
+                padding: 0; /* Full size for chat */
+            }
+
+            iframe {
+                width: 100%;
+                height: 100%;
+                border: none;
+                background-color: var(--card-bg);
+            }
+
+            .header-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 30px;
+            }
+
+            h2 {
+                margin: 0;
+                font-size: 1.5rem;
+            }
+
+            /* Grid Layout */
+            .dashboard-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 8px;
+                margin-bottom: 8px;
+            }
+            /* Monitoring server cards need more horizontal room for the
+               2-column svc-grid plus long service names, otherwise items
+               butt right against the card border at narrow widths. */
+            #mon-servers.dashboard-grid {
+                grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            }
+
+            .card {
+                background-color: var(--card-bg);
+                padding: 10px;
+                border-radius: 12px;
+                border: 1px solid var(--border-color);
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            }
+
+            .card-title {
+                color: var(--text-muted);
+                font-size: 0.85rem;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                margin-bottom: 15px;
+                display: flex;
+                justify-content: space-between;
+            }
+
+            /* Stats Values */
+            .stat-row {
+                display: flex;
+                align-items: baseline;
+                gap: 10px;
+                margin-bottom: 5px;
+            }
+
+            .stat-value {
+                font-size: 2rem;
+                font-weight: bold;
+            }
+
+            .stat-unit {
+                color: var(--text-muted);
+            }
+
+            .stat-sub {
+                font-size: 0.9rem;
+                color: var(--text-muted);
+                margin-top: 5px;
+            }
+
+            /* Progress Bars */
+            .progress-container {
+                background-color: var(--progress-bg);
+                height: 6px;
+                border-radius: 3px;
+                overflow: hidden;
+                margin-top: 10px;
+            }
+
+            .progress-bar {
+                height: 100%;
+                background-color: var(--accent-color);
+                width: 0%;
+                transition: width 0.5s ease;
+            }
+
+            /* Cores Grid */
+            .cores-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+                margin-top: 15px;
+            }
+
+            .core-item {
+                font-size: 0.8rem;
+            }
+
+            .core-label {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 2px;
+                color: var(--text-muted);
+            }
+
+            /* IO Stats */
+            .io-stat {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 8px;
+                padding-bottom: 8px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            }
+
+            .io-stat:last-child {
+                border-bottom: none;
+            }
+
+            /* Models List */
+            .model-item {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 15px;
+                border-bottom: 1px solid var(--border-color);
+                background-color: rgba(0, 0, 0, 0.2);
+                margin-bottom: 10px;
+                border-radius: 8px;
+            }
+
+            .model-info h4 {
+                margin: 0 0 5px 0;
+            }
+
+            .model-meta span {
+                background-color: var(--bg-color);
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 0.75rem;
+                color: var(--text-muted);
+                margin-right: 5px;
+            }
+
+            /* Buttons */
+            .btn {
+                padding: 8px 16px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: bold;
+                transition: opacity 0.2s;
+                position: relative;
+                overflow: hidden;
+            }
+
+            .btn:hover {
+                opacity: 0.9;
+            }
+
+            .btn:disabled {
+                cursor: not-allowed;
+                background-color: var(--border-color);
+                color: rgba(255, 255, 255, 0.5);
+            }
+
+            .btn-primary {
+                background-color: var(--accent-color);
+                color: #1a1b26;
+            }
+
+            .btn-danger {
+                background-color: var(--danger-color);
+                color: #fff;
+            }
+
+            .btn-ghost {
+                background-color: transparent;
+                color: var(--text-color);
+                border: 1px solid var(--border-color);
+                margin-right: 10px;
+            }
+
+            .btn-loading {
+                background-color: var(--card-bg);
+                color: var(--text-color);
+                border: 1px solid var(--border-color);
+                position: relative;
+                overflow: hidden;
+            }
+
+            .status-dot {
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background-color: var(--text-muted);
+                margin-right: 8px;
+            }
+
+            .status-active {
+                background-color: var(--success-color);
+                box-shadow: 0 0 8px var(--success-color);
+            }
+
+            /* Monitoring */
+            .server-card {
+                cursor: pointer;
+                transition: border-color 0.2s;
+            }
+            .server-card:hover {
+                border-color: var(--accent-color);
+            }
+            .server-card .server-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 6px;
+            }
+            .server-card .server-name {
+                font-size: 1.1rem;
+                font-weight: bold;
+            }
+            .server-card .server-ip {
+                font-size: 0.75rem;
+                color: var(--text-muted);
+            }
+            .server-card .server-indicator {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+            .server-card .server-indicator.ok {
+                background-color: var(--success-color);
+                box-shadow: 0 0 8px var(--success-color);
+            }
+            .server-card .server-indicator.fail {
+                background-color: var(--danger-color);
+                box-shadow: 0 0 8px var(--danger-color);
+            }
+            .server-card .server-indicator.warning {
+                background-color: var(--warning-color);
+                box-shadow: 0 0 8px var(--warning-color);
+            }
+            .server-card .server-indicator.unknown {
+                background-color: var(--text-muted);
+            }
+            .uptime-bar {
+                display: flex;
+                gap: 2px;
+                height: 18px;
+                margin-bottom: 2px;
+                border-radius: 3px;
+                overflow: visible;
+                position: relative;
+            }
+            .uptime-block {
+                flex: 1;
+                border-radius: 2px;
+                cursor: default;
+                position: relative;
+                transition: opacity 0.15s;
+            }
+            .uptime-block.ok { background: var(--success-color); opacity: 0.5; }
+            .uptime-block.ok:hover { opacity: 0.8; }
+            .uptime-block.empty { background: var(--border-color); opacity: 0.3; }
+            .uptime-block.warning {
+                background: var(--warning-color);
+                cursor: pointer;
+                opacity: 0.7;
+            }
+            .uptime-block.warning:hover { opacity: 1; }
+            .uptime-block.fail {
+                background: var(--danger-color);
+                cursor: pointer;
+                opacity: 0.8;
+            }
+            .uptime-block.fail:hover { opacity: 1; }
+            .uptime-block.incident {
+                cursor: pointer;
+                opacity: 0.8;
+            }
+            .uptime-block.incident:hover { opacity: 1; }
+
+
+            .uptime-bar-labels {
+                display: flex;
+                justify-content: space-between;
+                font-size: 0.65rem;
+                color: var(--text-muted);
+                margin-top: 2px;
+                margin-bottom: 4px;
+            }
+
+            .server-card .server-stats {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 8px;
+                font-size: 0.85rem;
+                color: var(--text-muted);
+            }
+            .svc-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 3px;
+            }
+            .svc-item {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                font-size: 0.8rem;
+                padding: 2px 4px;
+                border-radius: 4px;
+                background: rgba(0,0,0,0.2);
+                cursor: pointer;
+                transition: background 0.15s;
+            }
+            .svc-item:hover {
+                background: rgba(255,255,255,0.06);
+            }
+            .svc-name { flex: 1; }
+            .svc-ms { color: var(--text-muted); font-size: 0.7rem; }
+            .svc-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+            .svc-dot.ok { background: var(--success-color); }
+            .svc-dot.fail { background: var(--danger-color); }
+            .svc-dot.warning { background: var(--warning-color); }
+            .svc-dot.inactive { background: var(--text-muted); }
+            .svc-dot.unknown { background: var(--text-muted); }
+
+            .svc-inactive {
+                opacity: 0.5;
+            }
+
+            .incident-item {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px 16px;
+                background: rgba(0,0,0,0.2);
+                border-radius: 8px;
+                margin-bottom: 8px;
+                font-size: 0.9rem;
+            }
+            .incident-icon {
+                font-size: 1.1rem;
+                flex-shrink: 0;
+            }
+            .incident-ongoing {
+                border-left: 3px solid var(--danger-color);
+            }
+            .incident-resolved {
+                border-left: 3px solid var(--success-color);
+            }
+            .incident-history {
+                margin-left: 32px;
+                padding: 4px 0;
+            }
+            .incident-history-item {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 3px 8px;
+                font-size: 0.78rem;
+                color: var(--text-muted);
+            }
+            .incident-history-item .hist-dot {
+                width: 6px; height: 6px; border-radius: 50%;
+                background: var(--success-color); flex-shrink: 0;
+            }
+
+            .badge-clickable {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 8px;
+                font-size: 0.7rem;
+                font-weight: bold;
+                cursor: pointer;
+                transition: opacity 0.15s;
+                vertical-align: middle;
+                margin-left: 4px;
+            }
+            .badge-clickable:hover { opacity: 0.7; }
+            .badge-fail { background-color: var(--danger-color) !important; color: #1a1b26 !important; }
+            .badge-warn { background-color: var(--warning-color) !important; color: #1a1b26 !important; }
+
+            .svc-fail {
+                background: rgba(247, 118, 142, 0.1);
+                border: 1px solid rgba(247, 118, 142, 0.3);
+            }
+            .svc-warning {
+                background: rgba(224, 175, 104, 0.1);
+                border: 1px solid rgba(224, 175, 104, 0.3);
+            }
+
+            /* Service detail panel */
+            .svc-detail-panel {
+                margin-top: 12px;
+                border-top: 1px solid var(--border-color);
+                padding-top: 10px;
+            }
+            .svc-detail-content {
+                background: rgba(0,0,0,0.3);
+                border-radius: 8px;
+                padding: 12px;
+            }
+            .svc-detail-header {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 8px;
+                font-size: 0.9rem;
+            }
+            .svc-detail-error {
+                background: rgba(247, 118, 142, 0.1);
+                border: 1px solid rgba(247, 118, 142, 0.2);
+                border-radius: 4px;
+                padding: 8px 10px;
+                margin-bottom: 10px;
+                font-family: monospace;
+                font-size: 0.8rem;
+                color: var(--danger-color);
+                word-break: break-all;
+            }
+            .svc-detail-actions {
+                display: flex;
+                gap: 8px;
+                margin-bottom: 10px;
+            }
+
+            /* Timeline dots */
+            .svc-timeline {
+                margin-bottom: 10px;
+            }
+            .timeline-dots {
+                display: flex;
+                gap: 3px;
+                align-items: center;
+            }
+            .timeline-dot {
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                flex-shrink: 0;
+            }
+            .timeline-dot.ok { background: var(--success-color); }
+            .timeline-dot.fail { background: var(--danger-color); }
+            .timeline-dot.warning { background: var(--warning-color); }
+            .timeline-dot.inactive { background: var(--border-color); }
+
+            /* Error log */
+            .svc-error-log {
+                max-height: 150px;
+                overflow-y: auto;
+            }
+            .error-log-entry {
+                display: flex;
+                gap: 10px;
+                padding: 4px 0;
+                font-size: 0.8rem;
+                border-bottom: 1px solid rgba(255,255,255,0.03);
+            }
+            .error-log-time {
+                color: var(--text-muted);
+                flex-shrink: 0;
+                font-family: monospace;
+            }
+            .error-log-msg {
+                color: var(--danger-color);
+                font-family: monospace;
+                word-break: break-all;
+            }
+
+            .incident-error {
+                margin-top: 4px;
+                color: var(--danger-color);
+                font-family: monospace;
+                font-size: 0.8rem;
+            }
+
+            .fail-detail {
+                background: rgba(0,0,0,0.3);
+                border: 1px solid rgba(247, 118, 142, 0.2);
+                border-radius: 6px;
+                padding: 10px 12px;
+                margin-bottom: 8px;
+            }
+            .fail-detail-header {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                margin-bottom: 6px;
+            }
+            .fail-detail-error {
+                font-size: 0.8rem;
+                color: var(--danger-color);
+                background: rgba(247, 118, 142, 0.08);
+                padding: 6px 8px;
+                border-radius: 4px;
+                margin-bottom: 8px;
+                font-family: monospace;
+                word-break: break-all;
+            }
+            .fail-detail-actions {
+                display: flex;
+                gap: 8px;
+            }
+
+            .btn-micro {
+                padding: 3px 10px;
+                border: 1px solid var(--success-color);
+                border-radius: 4px;
+                background: transparent;
+                color: var(--success-color);
+                font-size: 0.75rem;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .btn-micro:hover {
+                background: rgba(158, 206, 106, 0.15);
+            }
+            .btn-micro-mute {
+                border-color: var(--warning-color);
+                color: var(--warning-color);
+            }
+            .btn-micro-mute:hover {
+                background: rgba(224, 175, 104, 0.15);
+            }
+            .btn-micro-dismiss {
+                border-color: var(--text-muted);
+                color: var(--text-muted);
+            }
+            .btn-micro-dismiss:hover {
+                background: rgba(255,255,255,0.08);
+                color: var(--text-color);
+            }
+
+            .muted-tag {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                background: rgba(255,255,255,0.04);
+                border: 1px solid var(--border-color);
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-size: 0.8rem;
+                color: var(--text-muted);
+            }
+            .muted-tag button {
+                background: none;
+                border: none;
+                color: var(--accent-color);
+                cursor: pointer;
+                font-size: 0.75rem;
+                padding: 2px;
+            }
+            .muted-tag button:hover {
+                color: var(--success-color);
+            }
+
+            /* Fan Icon Animation */
+            .fa-fan.spinning {
+                animation: spin 1s linear infinite;
+                color: var(--warning-color);
+            }
+
+            @keyframes spin {
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+
+            /* Compact mode for server cards */
+            .server-card.compact {
+                padding: 12px;
+            }
+            .server-card.compact .server-name { font-size: 0.9rem; }
+            .server-card.compact .server-ip { font-size: 0.65rem; }
+            .server-card.compact .uptime-bar { height: 16px; }
+            .server-card.compact .uptime-block { min-height: 16px; }
+            .server-card.compact .svc-grid { gap: 4px; }
+            .server-card.compact .svc-item { padding: 3px 8px; font-size: 0.75rem; }
+            .server-card.compact .svc-ms { font-size: 0.65rem; }
+
+            /* Dashboard compact cards */
+            .dash-compact .card { padding: 12px; }
+            .dash-compact .stat-value { font-size: 1.3rem; }
+            .dash-compact .cores-grid { display: none; }
+            .dash-compact .stat-sub { font-size: 0.75rem; }
+            .dash-compact .progress-container { height: 4px; }
+
+            /* ===== Power Health ===== */
+            .pwr-block {
+                flex: 1;
+                height: 100%;
+                transition: all 0.15s;
+                cursor: pointer;
+                position: relative;
+            }
+            .pwr-block.ok { background: rgba(158, 206, 106, 0.25); }
+            .pwr-block.warn { background: var(--warning-color); }
+            .pwr-block.bad { background: var(--danger-color); }
+            .pwr-block.empty { background: rgba(255,255,255,0.04); }
+            .pwr-block:hover { filter: brightness(1.3); }
+            .pwr-tooltip {
+                display: none;
+                position: absolute;
+                bottom: 36px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 6px;
+                padding: 6px 10px;
+                font-size: 0.75rem;
+                white-space: nowrap;
+                z-index: 100;
+                pointer-events: none;
+            }
+            .pwr-block:hover .pwr-tooltip { display: block; }
+            .pwr-event-item {
+                display: flex;
+                gap: 10px;
+                padding: 6px 0;
+                font-size: 0.8rem;
+                border-bottom: 1px solid rgba(255,255,255,0.03);
+                align-items: center;
+            }
+            .pwr-event-time {
+                color: var(--text-muted);
+                font-family: monospace;
+                flex-shrink: 0;
+            }
+            .pwr-event-type { flex: 1; }
+            .pwr-event-meta {
+                color: var(--text-muted);
+                font-size: 0.75rem;
+                font-family: monospace;
+            }
+
+            .chat-sidebar {
+                width: 260px;
+                min-width: 160px;
+                max-width: 500px;
+                background: var(--sidebar-bg);
+                border-right: 1px solid var(--border-color);
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                position: relative;
+                flex-shrink: 0;
+            }
+            .chat-resize-handle {
+                position: absolute;
+                top: 0;
+                right: -3px;
+                width: 6px;
+                height: 100%;
+                cursor: col-resize;
+                z-index: 20;
+            }
+            .chat-resize-handle:hover,
+            .chat-resize-handle.dragging {
+                background: var(--accent-color);
+                opacity: 0.4;
+            }
+            .chat-sidebar-header {
+                padding: 16px;
+                border-bottom: 1px solid var(--border-color);
+            }
+            .chat-new-btn {
+                width: 100%;
+                padding: 10px;
+                border: 1px dashed var(--border-color);
+                border-radius: 8px;
+                background: transparent;
+                color: var(--text-color);
+                cursor: pointer;
+                font-size: 0.9rem;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+            }
+            .chat-new-btn:hover {
+                border-color: var(--accent-color);
+                color: var(--accent-color);
+                background: rgba(122, 162, 247, 0.08);
+            }
+            .chat-conv-list {
+                flex: 1;
+                overflow-y: auto;
+                padding: 8px;
+            }
+            .chat-conv-item {
+                padding: 10px 12px;
+                border-radius: 8px;
+                cursor: pointer;
+                margin-bottom: 2px;
+                transition: all 0.15s;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+            }
+            .chat-conv-item:hover {
+                background: var(--card-bg);
+            }
+            .chat-conv-item.active {
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
+            }
+            .chat-conv-title {
+                flex: 1;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-size: 0.85rem;
+            }
+            .chat-conv-delete {
+                opacity: 0;
+                background: none;
+                border: none;
+                color: var(--text-muted);
+                cursor: pointer;
+                padding: 2px 4px;
+                font-size: 0.75rem;
+                transition: all 0.15s;
+            }
+            .chat-conv-item:hover .chat-conv-delete {
+                opacity: 1;
+            }
+            .chat-conv-delete:hover {
+                color: var(--danger-color);
+            }
+            .chat-conv-provider {
+                font-size: 0.65rem;
+                color: var(--text-muted);
+                margin-top: 2px;
+            }
+
+            .chat-main {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                min-width: 0;
+            }
+            .chat-toolbar {
+                padding: 12px 20px;
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                flex-shrink: 0;
+            }
+            .chat-model-select {
+                background: var(--card-bg);
+                color: var(--text-color);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 0.85rem;
+                min-width: 280px;
+                cursor: pointer;
+            }
+            .chat-model-select:focus {
+                outline: none;
+                border-color: var(--accent-color);
+            }
+            .chat-model-select optgroup {
+                background: var(--card-bg);
+                color: var(--text-muted);
+                font-style: normal;
+            }
+            .chat-model-select option {
+                background: var(--card-bg);
+                color: var(--text-color);
+                padding: 4px;
+            }
+            .chat-search-toggle {
+                background: transparent;
+                border: 1px solid var(--border-color);
+                color: var(--text-muted);
+                border-radius: 8px;
+                padding: 6px 12px;
+                cursor: pointer;
+                font-size: 0.8rem;
+                transition: all 0.2s;
+            }
+            .chat-search-toggle:hover {
+                border-color: var(--accent-color);
+                color: var(--text-color);
+            }
+            .chat-search-toggle.active {
+                background: rgba(158, 206, 106, 0.15);
+                border-color: var(--success-color);
+                color: var(--success-color);
+            }
+            .chat-provider-badge {
+                font-size: 0.75rem;
+                padding: 3px 8px;
+                border-radius: 4px;
+                color: var(--text-muted);
+                border: 1px solid var(--border-color);
+            }
+
+            .chat-messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 20px 40px;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+            .chat-empty {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: var(--text-muted);
+                font-size: 1.1rem;
+            }
+            .chat-msg {
+                display: flex;
+                gap: 12px;
+                max-width: 85%;
+                line-height: 1.6;
+            }
+            .chat-msg.user {
+                align-self: flex-end;
+                flex-direction: row-reverse;
+            }
+            .chat-msg-avatar {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.8rem;
+                flex-shrink: 0;
+            }
+            .chat-msg.user .chat-msg-avatar {
+                background: var(--accent-color);
+                color: #1a1b26;
+            }
+            .chat-msg.assistant .chat-msg-avatar {
+                background: var(--success-color);
+                color: #1a1b26;
+            }
+            .chat-msg-content {
+                flex: 1;
+                min-width: 0;
+            }
+            .chat-msg-body {
+                background: var(--card-bg);
+                padding: 12px 16px;
+                border-radius: 12px;
+                border: 1px solid var(--border-color);
+                font-size: 0.9rem;
+                overflow-wrap: break-word;
+                word-break: break-word;
+            }
+            .chat-msg.user .chat-msg-body {
+                background: rgba(122, 162, 247, 0.12);
+                border-color: rgba(122, 162, 247, 0.25);
+            }
+            .chat-msg-body p { margin: 0 0 8px 0; }
+            .chat-msg-body p:last-child { margin: 0; }
+            .chat-msg-body pre {
+                background: rgba(0,0,0,0.3);
+                border: 1px solid var(--border-color);
+                border-radius: 6px;
+                padding: 12px;
+                overflow-x: auto;
+                margin: 8px 0;
+                font-size: 0.82rem;
+            }
+            .chat-msg-body code {
+                font-family: 'JetBrains Mono', 'Fira Code', monospace;
+                font-size: 0.82rem;
+            }
+            .chat-msg-body :not(pre) > code {
+                background: rgba(0,0,0,0.3);
+                padding: 2px 6px;
+                border-radius: 4px;
+            }
+            .chat-msg-body ul, .chat-msg-body ol {
+                margin: 4px 0;
+                padding-left: 28px;
+                list-style-position: outside;
+            }
+            .chat-msg-body strong { color: var(--accent-color); }
+            .chat-msg-body blockquote {
+                border-left: 3px solid var(--accent-color);
+                margin: 8px 0;
+                padding: 4px 12px;
+                color: var(--text-muted);
+            }
+            .chat-msg-actions {
+                display: flex;
+                gap: 4px;
+                margin-top: 6px;
+                opacity: 0.5;
+                transition: opacity 0.15s;
+                align-items: center;
+            }
+            .chat-msg:hover .chat-msg-actions { opacity: 1; }
+            .chat-msg-actions button {
+                background: none;
+                border: 1px solid transparent;
+                color: var(--text-color);
+                cursor: pointer;
+                padding: 4px 10px;
+                border-radius: 4px;
+                font-size: 0.8rem;
+                transition: all 0.15s;
+                opacity: 0.7;
+            }
+            .chat-msg-actions button:hover {
+                opacity: 1;
+                border-color: var(--border-color);
+                background: var(--card-bg);
+            }
+            .code-run-bar {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                margin-top: -6px;
+                margin-bottom: 8px;
+            }
+            .code-run-btn {
+                background: var(--success-color);
+                color: #1a1b26;
+                border: none;
+                border-radius: 6px;
+                padding: 4px 14px;
+                cursor: pointer;
+                font-size: 0.8rem;
+                font-weight: 600;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+            }
+            .code-run-btn:hover { filter: brightness(1.15); }
+            .code-run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+            .code-output {
+                background: rgba(0,0,0,0.4);
+                border: 1px solid var(--border-color);
+                border-radius: 6px;
+                padding: 10px 14px;
+                margin: 4px 0 8px;
+                font-family: 'JetBrains Mono', 'Fira Code', monospace;
+                font-size: 0.82rem;
+                white-space: pre-wrap;
+                overflow-x: auto;
+                max-height: 300px;
+                overflow-y: auto;
+            }
+            .code-output.error { color: var(--danger-color); }
+            .code-output.success { color: var(--success-color); }
+            .chat-msg-error {
+                color: var(--danger-color);
+                font-style: italic;
+            }
+            .chat-streaming-cursor::after {
+                content: '\25AE';
+                animation: blink 0.8s infinite;
+                color: var(--accent-color);
+            }
+            @keyframes blink {
+                50% { opacity: 0; }
+            }
+
+            .chat-input-area {
+                padding: 16px 40px 20px;
+                border-top: 1px solid var(--border-color);
+                flex-shrink: 0;
+            }
+            .chat-input-wrap {
+                display: flex;
+                gap: 10px;
+                align-items: flex-end;
+            }
+            .chat-input {
+                flex: 1;
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 12px;
+                color: var(--text-color);
+                padding: 12px 16px;
+                font-size: 0.9rem;
+                font-family: inherit;
+                resize: none;
+                min-height: 24px;
+                max-height: 200px;
+                line-height: 1.5;
+            }
+            .chat-input:focus {
+                outline: none;
+                border-color: var(--accent-color);
+            }
+            .chat-input::placeholder {
+                color: var(--text-muted);
+            }
+            .chat-attach-btn {
+                padding: 12px;
+                background: transparent;
+                border: 1px solid var(--border-color);
+                border-radius: 12px;
+                color: var(--text-muted);
+                cursor: pointer;
+                font-size: 1rem;
+                transition: all 0.2s;
+            }
+            .chat-attach-btn:hover {
+                color: var(--accent-color);
+                border-color: var(--accent-color);
+            }
+            .chat-attach-preview-img {
+                max-height: 120px;
+                max-width: 200px;
+                border-radius: 8px;
+                border: 1px solid var(--border-color);
+            }
+            .chat-attach-remove {
+                background: var(--danger-color);
+                color: #1a1b26;
+                border: none;
+                border-radius: 50%;
+                width: 20px;
+                height: 20px;
+                cursor: pointer;
+                font-size: 0.7rem;
+                position: absolute;
+                top: -6px;
+                right: -6px;
+            }
+            .chat-send-btn {
+                padding: 12px 20px;
+                background: var(--accent-color);
+                color: #1a1b26;
+                border: none;
+                border-radius: 12px;
+                cursor: pointer;
+                font-size: 0.9rem;
+                font-weight: 600;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                white-space: nowrap;
+            }
+            .chat-send-btn:hover {
+                filter: brightness(1.15);
+            }
+            .chat-send-btn:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+            .chat-send-btn.stop {
+                background: var(--danger-color);
+            }
+
+            /* proxyonly Sandbox view */
+            #sandbox-case-select { background-color: var(--card-bg, #16161e); color: var(--text-primary, #c0caf5); border: 1px solid var(--border-color, #2f334d); }
+            #sandbox-case-select option { background-color: #16161e; color: #c0caf5; }
+            #sandbox-case-select option:checked, #sandbox-case-select option:hover { background-color: #2f334d; color: #c0caf5; }
+            #sandbox-runs-table th, #sandbox-runs-table td { border-bottom: 1px solid var(--border-color); padding: .35rem .6rem; vertical-align: top; }
+            #sandbox-runs-table th[title], #sandbox-runs-table td[title] { cursor: help; }
+            #sandbox-runs-table tr.v-clean { color: #9ece6a; }
+            #sandbox-runs-table tr.v-blocked-by-sandbox { color: #7dcfff; }
+            #sandbox-runs-table tr.v-content-leak { color: #e0af68; background: rgba(224, 175, 104, 0.06); }
+            #sandbox-runs-table tr.v-unexpected-no-trace { color: #ff9e64; background: rgba(255, 158, 100, 0.08); }
+            #sandbox-runs-table tr.v-lan-leak, #sandbox-runs-table tr.v-external-leak { color: #f7768e; background: rgba(247, 118, 142, 0.1); font-weight: 600; }
+            #sandbox-runs-table .detail { font-size: .75rem; max-width: 40ch; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+            .sandbox-badge { display:inline-block; padding:.1rem .5rem; border:1px solid currentColor; border-radius:.25rem; margin-right:.5rem; font-weight:600; cursor:help; }
+            .sandbox-badge.v-clean { color:#9ece6a; }
+            .sandbox-badge.v-blocked-by-sandbox { color:#7dcfff; }
+            .sandbox-badge.v-content-leak { color:#e0af68; }
+            .sandbox-badge.v-unexpected-no-trace { color:#ff9e64; }
+            .sandbox-badge.v-lan-leak, .sandbox-badge.v-external-leak { color:#f7768e; }
+        </style>
+    </head>
+    <body>
+        <!-- Sidebar -->
+        <div class="sidebar" id="main-sidebar">
+            <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
+            <div class="logo">
+                <i class="fas fa-rocket"></i>
+                <span>hostery</span>
+                <i class="fas fa-chevron-left sidebar-toggle-icon" id="sidebar-toggle-icon" onclick="toggleSidebar()" title="Collapse sidebar"></i>
+            </div>
+            <div
+                id="nav-dashboard"
+                class="nav-item active"
+                onclick="showView('dashboard')"
+                title="Dashboard"
+            >
+                <i class="fas fa-tachometer-alt"></i> <span>Dashboard</span>
+            </div>
+            <div id="nav-monitoring" class="nav-item" onclick="showView('monitoring')" title="Net View">
+                <i class="fas fa-heartbeat"></i> <span>Net View</span>
+            </div>
+            <div id="nav-settings" class="nav-item" onclick="showView('settings')" title="Settings">
+                <i class="fas fa-gear"></i> <span>Settings</span>
+            </div>
+        </div>
+
+        <!-- Main -->
+        <div class="main-content">
+            <!-- VIEW: DASHBOARD -->
+            <div id="view-dashboard" class="view-section active">
+                <div class="header-row">
+                    <h2>System Overview</h2>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <button class="btn btn-ghost" onclick="toggleDashCompact()" id="dash-compact-btn">
+                            <i class="fas fa-compress-alt"></i> Compact
+                        </button>
+                        <div class="status-badge" id="clock">--:--</div>
+                    </div>
+                </div>
+
+                <!-- Top Stats -->
+                <div class="dashboard-grid" id="dash-stats">
+                    <!-- CPU & Fan -->
+                    <div class="card">
+                        <div class="card-title">
+                            <span>CPU Status</span>
+                            <div
+                                style="
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 8px;
+                                "
+                            >
+                                <span
+                                    id="fan-speed"
+                                    style="
+                                        font-weight: bold;
+                                        color: var(--text-color);
+                                        font-size: 1.1rem;
+                                    "
+                                    >--%</span
+                                >
+                                <i
+                                    class="fas fa-fan"
+                                    id="fan-icon"
+                                    style="transition: 0.5s"
+                                ></i>
+                            </div>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-value" id="cpu-temp">--</span>
+                            <span class="stat-unit">°C</span>
+                        </div>
+                        <div class="stat-sub" id="cpu-freq" style="margin-bottom: 8px; font-family: monospace;">-- MHz</div>
+
+                        <div class="cores-grid" id="cores-grid">
+                            <!-- Cores injected by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Memory & Storage -->
+                    <div class="card">
+                        <div class="card-title">
+                            <span>Memory</span>
+                            <i class="fas fa-memory"></i>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-value" id="ram-pct">--</span>
+                            <span class="stat-unit">%</span>
+                        </div>
+                        <div class="stat-sub" id="ram-detail">-- / -- GB</div>
+                        <div class="progress-container">
+                            <div class="progress-bar" id="ram-bar"></div>
+                        </div>
+
+                        <div class="card-title" style="margin-top: 20px;">
+                            <span>Storage</span>
+                            <i class="fas fa-hdd"></i>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-value" id="disk-pct">--</span>
+                            <span class="stat-unit">%</span>
+                        </div>
+                        <div class="stat-sub" id="disk-detail">-- / -- GB</div>
+                        <div class="progress-container">
+                            <div class="progress-bar" id="disk-bar"></div>
+                        </div>
+                    </div>
+
+                    <!-- IO Stats -->
+                    <div class="card">
+                        <div class="card-title">
+                            <span>I/O Activity</span>
+                            <i class="fas fa-network-wired"></i>
+                        </div>
+                        <div class="io-stat">
+                            <span><i class="fas fa-hdd"></i> Disk Read</span>
+                            <span id="disk-read">0 MB/s</span>
+                        </div>
+                        <div class="io-stat">
+                            <span><i class="fas fa-save"></i> Disk Write</span>
+                            <span id="disk-write">0 MB/s</span>
+                        </div>
+                        <div class="io-stat">
+                            <span><i class="fas fa-download"></i> Net In</span>
+                            <span id="net-in">0 MB/s</span>
+                        </div>
+                        <div class="io-stat">
+                            <span><i class="fas fa-upload"></i> Net Out</span>
+                            <span id="net-out">0 MB/s</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Power Health -->
+                <div id="power-section" class="card" style="margin-bottom: 20px; display: none;">
+                    <div class="card-title" onclick="togglePowerExpand()" style="cursor:pointer;">
+                        <span><i class="fas fa-bolt" id="power-icon" style="color: var(--success-color);"></i> Power Health <i class="fas fa-chevron-down" id="power-chevron" style="font-size:0.6rem;color:var(--text-muted);margin-left:4px;"></i></span>
+                        <div style="display:flex;align-items:center;gap:16px;font-size:0.85rem;">
+                            <span id="power-watts" style="color:var(--accent-color);font-weight:bold;">--W</span>
+                            <span id="power-voltage" style="color:var(--text-color);">--</span>
+                            <span id="power-voltage-range" style="color:var(--text-muted);font-size:0.75rem;"></span>
+                        </div>
+                    </div>
+                    <div id="power-status" style="margin-bottom: 12px; font-size: 0.85rem;"></div>
+                    <div id="power-timeline" style="display: flex; gap: 1px; height: 28px; border-radius: 4px; overflow: hidden; margin-bottom: 8px;"></div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted);">
+                        <span id="power-timeline-start">-24h</span>
+                        <span>now</span>
+                    </div>
+                    <div id="power-expand" style="display:none;">
+                        <div id="power-events" style="margin-top: 12px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: MONITORING -->
+            <div id="view-monitoring" class="view-section">
+                <div class="header-row">
+                    <h2>Infrastructure Monitoring</h2>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span id="mon-next-check" class="stat-sub"></span>
+                        <button class="btn btn-ghost" onclick="toggleMonCompact()" id="mon-compact-btn">
+                            <i class="fas fa-compress-alt"></i> Compact
+                        </button>
+                        <button class="btn btn-ghost" onclick="monCheckNow(this)" id="btn-check-now">
+                            <i class="fas fa-sync"></i> Check Now
+                        </button>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid" id="mon-servers">
+                    <!-- Server cards injected by JS -->
+                </div>
+
+                <div style="margin-top: 30px;">
+                    <h2 style="margin-bottom: 20px; cursor: pointer;" onclick="const el=document.getElementById('mon-incidents'); const v=el.style.display==='none'; el.style.display=v?'':'none'; localStorage.setItem('mon-incidents-collapsed',v?'':'1'); this.querySelector('i').className=v?'fas fa-chevron-up':'fas fa-chevron-down';">Active Incidents <i class="fas fa-chevron-up" style="font-size:0.7rem;color:var(--text-muted);margin-left:6px;"></i></h2>
+                    <div id="mon-incidents">
+                        <!-- Incidents injected by JS -->
+                    </div>
+                </div>
+
+                <div id="mon-muted" style="margin-top: 20px; display: none;">
+                    <!-- Muted services panel injected by JS -->
+                </div>
+            </div>
+
+            <!-- VIEW: SETTINGS -->
+            <div id="view-settings" class="view-section">
+                <div class="header-row"><h2>Settings</h2></div>
+                <div id="settings-root"></div>
+            </div>
+
+        </div>
+
+        <script src="{{ url_for('static', filename='js/monitoring.js') }}?v={{ cache_bust }}"></script>
+        <script src="{{ url_for('static', filename='js/settings.js') }}?v={{ cache_bust }}"></script>
+        <script src="{{ url_for('static', filename='js/dashboard.js') }}?v={{ cache_bust }}"></script>
+    </body>
+</html>

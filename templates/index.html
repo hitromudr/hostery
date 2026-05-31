@@ -9,6 +9,23 @@
             href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
             rel="stylesheet"
         />
+        <script>
+            // Apply theme before first paint to avoid a flash of the wrong theme.
+            // A stored choice wins; otherwise follow the OS preference.
+            (function () {
+                try {
+                    var t = localStorage.getItem("hostery_theme");
+                    if (!t) {
+                        t = window.matchMedia("(prefers-color-scheme: light)").matches
+                            ? "light"
+                            : "dark";
+                    }
+                    if (t === "light") {
+                        document.documentElement.classList.add("theme-light");
+                    }
+                } catch (e) {}
+            })();
+        </script>
         <style>
             :root {
                 --bg-color: #1a1b26;
@@ -23,6 +40,32 @@
                 --border-color: #414868;
                 --progress-bg: #414868;
                 --progress-fill: #7aa2f7;
+                /* Theme-aware surfaces/overlays (see body for light overrides) */
+                --on-fill: #1a1b26;            /* text drawn on a colored fill */
+                --raise: rgba(255, 255, 255, 0.06); /* subtle lighter surface */
+                --sink: rgba(0, 0, 0, 0.2);    /* subtle inset/darker surface */
+                --divider: rgba(255, 255, 255, 0.04); /* hairline separators */
+                --cell-empty: rgba(255, 255, 255, 0.05); /* empty timeline cell */
+            }
+
+            :root.theme-light {
+                --bg-color: #e1e2e7;
+                --sidebar-bg: #d0d1d9;
+                --card-bg: #ffffff;
+                --text-color: #343b58;
+                --text-muted: #6c6f93;
+                --accent-color: #34548a;
+                --success-color: #587539;
+                --warning-color: #8f5e15;
+                --danger-color: #c64343;
+                --border-color: #c4c8da;
+                --progress-bg: #c4c8da;
+                --progress-fill: #34548a;
+                --on-fill: #ffffff;
+                --raise: rgba(0, 0, 0, 0.04);
+                --sink: rgba(0, 0, 0, 0.05);
+                --divider: rgba(0, 0, 0, 0.07);
+                --cell-empty: rgba(0, 0, 0, 0.06);
             }
 
             body {
@@ -290,7 +333,7 @@
                 justify-content: space-between;
                 margin-bottom: 8px;
                 padding-bottom: 8px;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                border-bottom: 1px solid var(--divider);
             }
 
             .io-stat:last-child {
@@ -304,7 +347,7 @@
                 align-items: center;
                 padding: 15px;
                 border-bottom: 1px solid var(--border-color);
-                background-color: rgba(0, 0, 0, 0.2);
+                background-color: var(--sink);
                 margin-bottom: 10px;
                 border-radius: 8px;
             }
@@ -341,12 +384,12 @@
             .btn:disabled {
                 cursor: not-allowed;
                 background-color: var(--border-color);
-                color: rgba(255, 255, 255, 0.5);
+                color: var(--text-muted);
             }
 
             .btn-primary {
                 background-color: var(--accent-color);
-                color: #1a1b26;
+                color: var(--on-fill);
             }
 
             .btn-danger {
@@ -492,12 +535,12 @@
                 font-size: 0.8rem;
                 padding: 2px 4px;
                 border-radius: 4px;
-                background: rgba(0,0,0,0.2);
+                background: var(--sink);
                 cursor: pointer;
                 transition: background 0.15s;
             }
             .svc-item:hover {
-                background: rgba(255,255,255,0.06);
+                background: var(--raise);
             }
             .svc-name { flex: 1; }
             .svc-ms { color: var(--text-muted); font-size: 0.7rem; }
@@ -522,7 +565,7 @@
                 align-items: center;
                 gap: 12px;
                 padding: 12px 16px;
-                background: rgba(0,0,0,0.2);
+                background: var(--sink);
                 border-radius: 8px;
                 margin-bottom: 8px;
                 font-size: 0.9rem;
@@ -566,8 +609,8 @@
                 margin-left: 4px;
             }
             .badge-clickable:hover { opacity: 0.7; }
-            .badge-fail { background-color: var(--danger-color) !important; color: #1a1b26 !important; }
-            .badge-warn { background-color: var(--warning-color) !important; color: #1a1b26 !important; }
+            .badge-fail { background-color: var(--danger-color) !important; color: var(--on-fill) !important; }
+            .badge-warn { background-color: var(--warning-color) !important; color: var(--on-fill) !important; }
 
             .svc-fail {
                 background: rgba(247, 118, 142, 0.1);
@@ -585,7 +628,7 @@
                 padding-top: 10px;
             }
             .svc-detail-content {
-                background: rgba(0,0,0,0.3);
+                background: var(--sink);
                 border-radius: 8px;
                 padding: 12px;
             }
@@ -643,7 +686,7 @@
                 gap: 10px;
                 padding: 4px 0;
                 font-size: 0.8rem;
-                border-bottom: 1px solid rgba(255,255,255,0.03);
+                border-bottom: 1px solid var(--divider);
             }
             .error-log-time {
                 color: var(--text-muted);
@@ -664,7 +707,7 @@
             }
 
             .fail-detail {
-                background: rgba(0,0,0,0.3);
+                background: var(--sink);
                 border: 1px solid rgba(247, 118, 142, 0.2);
                 border-radius: 6px;
                 padding: 10px 12px;
@@ -716,7 +759,7 @@
                 color: var(--text-muted);
             }
             .btn-micro-dismiss:hover {
-                background: rgba(255,255,255,0.08);
+                background: var(--raise);
                 color: var(--text-color);
             }
 
@@ -724,7 +767,7 @@
                 display: flex;
                 align-items: center;
                 gap: 6px;
-                background: rgba(255,255,255,0.04);
+                background: var(--raise);
                 border: 1px solid var(--border-color);
                 border-radius: 6px;
                 padding: 4px 10px;
@@ -785,7 +828,7 @@
             .pwr-block.ok { background: rgba(158, 206, 106, 0.25); }
             .pwr-block.warn { background: var(--warning-color); }
             .pwr-block.bad { background: var(--danger-color); }
-            .pwr-block.empty { background: rgba(255,255,255,0.04); }
+            .pwr-block.empty { background: var(--raise); }
             .pwr-block:hover { filter: brightness(1.3); }
             .pwr-tooltip {
                 display: none;
@@ -808,7 +851,7 @@
                 gap: 10px;
                 padding: 6px 0;
                 font-size: 0.8rem;
-                border-bottom: 1px solid rgba(255,255,255,0.03);
+                border-bottom: 1px solid var(--divider);
                 align-items: center;
             }
             .pwr-event-time {
@@ -832,7 +875,7 @@
             }
             .code-run-btn {
                 background: var(--success-color);
-                color: #1a1b26;
+                color: var(--on-fill);
                 border: none;
                 border-radius: 6px;
                 padding: 4px 14px;
@@ -1001,6 +1044,16 @@
             </div>
             <div id="nav-settings" class="nav-item" onclick="showView('settings')" title="Settings">
                 <i class="fas fa-gear"></i> <span>Settings</span>
+            </div>
+            <div
+                id="theme-toggle"
+                class="nav-item"
+                onclick="toggleTheme()"
+                title="Toggle light / dark theme"
+                style="margin-top: auto"
+            >
+                <i class="fas fa-moon" id="theme-toggle-icon"></i>
+                <span id="theme-toggle-label">Dark</span>
             </div>
         </div>
 

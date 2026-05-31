@@ -23,6 +23,10 @@ function formatDurationShort(seconds) {
 //   30–60 min → vivid red darkens and warms toward brown
 function severityColor(sev, badSeconds) {
   const bs = (typeof badSeconds === "number") ? badSeconds : sev * 3600;
+  // On the light theme the cards are white, so darken the cells for contrast.
+  const isLight = document.documentElement.classList.contains("theme-light");
+  const hsl = (h, s, l) =>
+    `hsl(${h}, ${s}%, ${isLight ? Math.max(20, l - 16) : l}%)`;
   // Saturation tuned to sit near the base "ok" green (~50% sat)
   // so incident bars don't visually outweigh the timeline.
   if (bs < 600) {
@@ -33,7 +37,7 @@ function severityColor(sev, badSeconds) {
     const hue = Math.round(89 - t * 29);  // 89 → 60
     const sat = Math.round(51 + t * 4);   // 51 → 55
     const light = Math.round(61 - t * 6); // 61 → 55
-    return `hsl(${hue}, ${sat}%, ${light}%)`;
+    return hsl(hue, sat, light);
   }
   if (bs < 1800) {
     // 10–30 min: yellow → red
@@ -41,7 +45,7 @@ function severityColor(sev, badSeconds) {
     const hue = Math.round(60 - t * 60);
     const sat = Math.round(55 + t * 10); // 55% → 65%
     const light = Math.round(55 - t * 5); // 55% → 50%
-    return `hsl(${hue}, ${sat}%, ${light}%)`;
+    return hsl(hue, sat, light);
   }
   // 30–60 min: red darkens to brown
   const bsClamp = Math.min(3600, bs);

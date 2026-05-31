@@ -4,6 +4,31 @@
 
 hostery is a generic self-hosted server fleet monitor. It runs as a lightweight Flask web application and provides four views: a local host **Dashboard** (CPU temperature, frequency, fan speed, load average, RAM, disk, I/O rates; a Raspberry Pi Power Health module is auto-enabled when `vcgencmd` is detected on the host), a configurable SSH-based **Net View** that polls a fleet of remote servers and shows 24-hour availability timelines, 30-day uptime percentages, incident history, and Telegram alerts, a **Settings** tab with a live config editor (no restart needed), and a **Cockpit** bridge that detects, installs, and links Red Hat Cockpit on each managed server.
 
+## Screenshots
+
+The data shown is a fictional fleet (addresses from the RFC 5737 documentation
+ranges); no real servers are exposed. The theme is switched with the toggle in
+the sidebar (follows the OS preference by default).
+
+### Net View — infrastructure monitoring
+
+| Dark | Light |
+|---|---|
+| ![Net View — dark](docs/screenshots/net-view-dark.png) | ![Net View — light](docs/screenshots/net-view-light.png) |
+
+### Dashboard
+
+| Dark | Light |
+|---|---|
+| ![Dashboard — dark](docs/screenshots/dashboard-dark.png) | ![Dashboard — light](docs/screenshots/dashboard-light.png) |
+
+### Settings
+
+| Dark | Light |
+|---|---|
+| ![Settings — dark](docs/screenshots/settings-dark.png) | ![Settings — light](docs/screenshots/settings-light.png) |
+
+
 ## Quick start (Docker)
 
 ```bash

@@ -525,3 +525,44 @@ function toggleSidebar() {
   applySidebarCollapsed(next);
   localStorage.setItem("sidebar-collapsed", next ? "1" : "");
 }
+
+// --- Theme toggle (light / dark) ---
+// The pre-paint <head> script sets the initial class from localStorage or the
+// OS preference. Here we keep the toggle icon/label in sync, react to OS
+// changes while the user has made no explicit choice, and flip on click.
+function _applyThemeUI() {
+    var isLight = document.documentElement.classList.contains("theme-light");
+    var icon = document.getElementById("theme-toggle-icon");
+    var label = document.getElementById("theme-toggle-label");
+    if (icon) icon.className = isLight ? "fas fa-sun" : "fas fa-moon";
+    if (label) label.textContent = isLight ? "Light" : "Dark";
+}
+
+function toggleTheme() {
+    var isLight = document.documentElement.classList.toggle("theme-light");
+    try {
+        localStorage.setItem("hostery_theme", isLight ? "light" : "dark");
+    } catch (e) {}
+    _applyThemeUI();
+    // The Net View timeline reads palette CSS vars at draw time; re-render it
+    // so colors update immediately instead of on the next poll.
+    var mv = document.getElementById("view-monitoring");
+    if (mv && mv.classList.contains("active") && typeof loadMonitoring === "function") {
+        loadMonitoring();
+    }
+}
+
+(function () {
+    _applyThemeUI();
+    try {
+        var mq = window.matchMedia("(prefers-color-scheme: light)");
+        var onChange = function (e) {
+            // Only follow the OS while the user has not chosen explicitly.
+            if (localStorage.getItem("hostery_theme")) return;
+            document.documentElement.classList.toggle("theme-light", e.matches);
+            _applyThemeUI();
+        };
+        if (mq.addEventListener) mq.addEventListener("change", onChange);
+        else if (mq.addListener) mq.addListener(onChange);
+    } catch (e) {}
+})();

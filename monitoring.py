@@ -71,8 +71,11 @@ def build_check_command(check):
 
 monitoring_bp = Blueprint("monitoring", __name__)
 
-DB_PATH = Path(__file__).parent / "config" / "monitoring.db"
-CONFIG_PATH = Path(__file__).parent / "config" / "config.json"
+# Config dir defaults to ./config but can be redirected (e.g. for demo/test
+# runs) via HOSTERY_CONFIG_DIR so real config.json / monitoring.db are untouched.
+CONFIG_DIR = Path(os.environ.get("HOSTERY_CONFIG_DIR", Path(__file__).parent / "config"))
+DB_PATH = CONFIG_DIR / "monitoring.db"
+CONFIG_PATH = CONFIG_DIR / "config.json"
 
 _lock = threading.Lock()
 _scheduler_started = False

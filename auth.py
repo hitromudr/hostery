@@ -1,7 +1,6 @@
 import hmac
 import logging
 import secrets
-from functools import wraps
 
 from flask import Response, request
 

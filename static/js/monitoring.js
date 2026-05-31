@@ -3,6 +3,7 @@ let monInterval = null;
 let monCountdownInterval = null;
 let monStatusData = null;
 let monMutedData = {};
+const _cockpitSeen = new Set();
 
 function formatDurationShort(seconds) {
   const s = Math.max(0, Math.round(seconds));
@@ -301,7 +302,9 @@ function renderMonServers(data) {
     .join("");
 
   // After the card list DOM is in place, populate each server's Cockpit slot.
-  names.forEach((name) => loadCockpit(name));
+  names.forEach((name) => {
+    if (!_cockpitSeen.has(name)) { _cockpitSeen.add(name); loadCockpit(name); }
+  });
 }
 
 function toggleMonCompact() {

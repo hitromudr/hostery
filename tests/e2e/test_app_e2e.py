@@ -109,7 +109,7 @@ def test_settings_add_service_row(page):
     card = page.locator('#cfg-servers .card').filter(
         has=page.locator('input.srv-name[value="web-01"]'))
     before = card.locator(".svc-row").count()
-    card.get_by_role("button", name="+ service").click()
+    card.get_by_role("button", name=re.compile(r"^\s*service")).click()
     expect(card.locator(".svc-row")).to_have_count(before + 1)
 
 

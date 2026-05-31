@@ -25,34 +25,43 @@ function renderSettings() {
   const servers = _cfg.servers || {};
   const tg = _cfg.telegram || { bot_token: "", chat_id: "" };
   root.innerHTML = `
-    <div class="card">
-      <div class="card-title"><span>Global</span></div>
-      <label>Check interval (s) <input id="cfg-interval" type="number" value="${esc(_cfg.check_interval || 300)}"></label>
-      <label>Telegram bot token <input id="cfg-tg-token" type="password" placeholder="(unchanged)" value=""></label>
-      <label>Telegram chat id <input id="cfg-tg-chat" value="${esc(tg.chat_id || "")}"></label>
+    <div class="card settings-card">
+      <div class="settings-card-head"><span class="settings-card-title">Global</span></div>
+      <div class="field-grid">
+        <label class="field"><span>Check interval (s)</span><input id="cfg-interval" type="number" value="${esc(_cfg.check_interval || 300)}"></label>
+        <label class="field"><span>Telegram bot token</span><input id="cfg-tg-token" type="password" placeholder="(unchanged)" value=""></label>
+        <label class="field"><span>Telegram chat id</span><input id="cfg-tg-chat" value="${esc(tg.chat_id || "")}"></label>
+      </div>
     </div>
     <div id="cfg-servers">${Object.keys(servers).map(serverCardHTML).join("")}</div>
-    <button class="btn btn-ghost" onclick="addServer()"><i class="fas fa-plus"></i> Add server</button>
-    <button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> Save</button>
+    <div class="settings-actions">
+      <button class="btn btn-ghost" onclick="addServer()"><i class="fas fa-plus"></i> Add server</button>
+      <button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> Save</button>
+    </div>
     <div id="cfg-msg"></div>`;
 }
 
 function serverCardHTML(name) {
   const s = _cfg.servers[name];
   const services = (s.services || []).map((svc, i) => serviceRowHTML(name, svc, i)).join("");
-  return `<div class="card" data-server="${esc(name)}">
-    <div class="card-title">
-      <input class="srv-name" value="${esc(name)}" data-orig="${esc(name)}">
-      <button class="btn btn-danger" onclick="removeServer('${esc(name)}')"><i class="fas fa-trash"></i></button>
+  return `<div class="card settings-card" data-server="${esc(name)}">
+    <div class="settings-card-head">
+      <input class="srv-name srv-name-input" value="${esc(name)}" data-orig="${esc(name)}" placeholder="server name">
+      <button class="btn btn-danger btn-icon" title="Remove server" onclick="removeServer('${esc(name)}')"><i class="fas fa-trash"></i></button>
     </div>
-    <label>host <input class="srv-host" value="${esc(s.host || "")}"></label>
-    <label>user <input class="srv-user" value="${esc(s.user || "")}"></label>
-    <label>key path <input class="srv-key" value="${esc(s.key || "")}"></label>
-    <label>cockpit_url <input class="srv-cockpit" value="${esc(s.cockpit_url || "")}"></label>
+    <div class="field-grid">
+      <label class="field"><span>host</span><input class="srv-host" value="${esc(s.host || "")}" placeholder="host or IP"></label>
+      <label class="field"><span>user</span><input class="srv-user" value="${esc(s.user || "")}" placeholder="ssh user"></label>
+      <label class="field"><span>key path</span><input class="srv-key" value="${esc(s.key || "")}" placeholder="~/.ssh/id_rsa"></label>
+      <label class="field"><span>cockpit url</span><input class="srv-cockpit" value="${esc(s.cockpit_url || "")}" placeholder="auto"></label>
+    </div>
+    <div class="svc-head">Services</div>
     <div class="srv-services">${services}</div>
-    <button class="btn btn-ghost" onclick="addService('${esc(name)}')">+ service</button>
-    <button class="btn btn-ghost" onclick="testSsh('${esc(name)}')">Test connection</button>
-    <span class="ssh-result"></span>
+    <div class="srv-actions">
+      <button class="btn btn-ghost btn-sm" onclick="addService('${esc(name)}')"><i class="fas fa-plus"></i> service</button>
+      <button class="btn btn-ghost btn-sm" onclick="testSsh('${esc(name)}')"><i class="fas fa-plug"></i> Test connection</button>
+      <span class="ssh-result"></span>
+    </div>
   </div>`;
 }
 
@@ -65,8 +74,8 @@ function serviceRowHTML(server, svc, i) {
   return `<div class="svc-row">
     <input class="svc-name" value="${esc(o.name || "")}" placeholder="name">
     <select class="svc-type">${opts}</select>
-    <input class="svc-param" value="${esc(param)}" placeholder="unit/port/container/iface/url">
-    <button onclick="this.parentElement.remove()">×</button>
+    <input class="svc-param" value="${esc(param)}" placeholder="unit / port / container / iface / url">
+    <button class="svc-del" title="Remove" onclick="this.closest('.svc-row').remove()">×</button>
   </div>`;
 }
 

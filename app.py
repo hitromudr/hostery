@@ -2,7 +2,7 @@ import logging
 import os
 import time
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, make_response, render_template
 
 import auth
 import monitoring
@@ -26,7 +26,11 @@ _CACHE_BUST = int(time.time())
 
 @app.route("/")
 def index():
-    return render_template("index.html", cache_bust=_CACHE_BUST)
+    # The document embeds inline CSS and references versioned JS, so it must
+    # never be served from a stale cache (that hid earlier style fixes).
+    resp = make_response(render_template("index.html", cache_bust=_CACHE_BUST))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/api/stats")

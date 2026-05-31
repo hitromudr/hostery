@@ -75,6 +75,7 @@ Configuration lives in `config/config.json`. The annotated example is at `config
 | `user` | SSH login user |
 | `key` | Path to private key (e.g. `~/.ssh/id_rsa`) |
 | `cockpit_url` | Optional Cockpit URL override; auto-detected if blank |
+| `socks` | Optional SOCKS5 proxy for SSH as `host:port` (e.g. an `ssh -D` / autossh tunnel). Use when the host is only reachable through a proxy |
 | `services` | List of service checks (see below) |
 | `custom_checks` | List of custom shell checks (see below) |
 

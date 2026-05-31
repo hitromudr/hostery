@@ -28,6 +28,7 @@
     "vpn-01": {
       "host": "10.0.0.5",
       "user": "admin",
+      "socks": "127.0.0.1:1080",
       "services": [
         { "name": "wg", "type": "wireguard", "iface": "wg0" }
       ]

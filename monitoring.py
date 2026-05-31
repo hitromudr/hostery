@@ -185,6 +185,23 @@ def _get_ssh_client(server_name, server_cfg, config):
         # Store jump_client on the main client so we can close it later
         client._jump_client = jump_client
 
+    # Optional SOCKS5 proxy (e.g. an autossh/ssh -D tunnel). Accepts
+    # "host:port" or {"host":..., "port":...}. Mutually exclusive with jump.
+    socks_cfg = server_cfg.get("socks")
+    if socks_cfg and sock is None:
+        import socks as _socks  # PySocks
+        if isinstance(socks_cfg, str):
+            sh, _, sp = socks_cfg.partition(":")
+            socks_host, socks_port = sh or "127.0.0.1", int(sp or 1080)
+        else:
+            socks_host = socks_cfg.get("host", "127.0.0.1")
+            socks_port = int(socks_cfg.get("port", 1080))
+        s = _socks.socksocket()
+        s.set_proxy(_socks.SOCKS5, socks_host, socks_port)
+        s.settimeout(timeout)
+        s.connect((server_cfg["host"], int(server_cfg.get("ssh_port", 22))))
+        sock = s
+
     connect_kwargs = {
         "hostname": server_cfg["host"],
         "username": server_cfg["user"],

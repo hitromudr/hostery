@@ -1,0 +1,14 @@
+services:
+  hostery:
+    build: .
+    # Bind to localhost on the host by default; put a TLS reverse proxy in front for remote access.
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - ./config:/app/config
+      - ${SSH_KEYS_DIR:-~/.ssh}:/root/.ssh:ro
+    environment:
+      # Leave HOSTERY_AUTH unset to auto-generate a password (printed in logs),
+      # set user:pass to fix it, or 'off' to disable when fronted by other auth.
+      - HOSTERY_AUTH=${HOSTERY_AUTH:-}
+    restart: unless-stopped

@@ -242,7 +242,10 @@ def check_server(server_name, server_cfg, config):
         logger.warning(f"SSH connect failed for {server_name}: {e}")
         # SSH itself is down — services are unknown (can't check)
         results.append(("ssh", "fail", str(e), elapsed))
-        for svc in server_cfg.get("services", []):
+        # Resolve each entry to its service NAME — entries may be dicts in the
+        # config-driven model, and a dict can't be stored as a service key.
+        for entry in server_cfg.get("services", []):
+            svc, _ = resolve_service(entry)
             results.append((svc, "unknown", None, 0))
         return results
 

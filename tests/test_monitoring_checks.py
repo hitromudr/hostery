@@ -28,3 +28,16 @@ def test_build_check_command_http():
     cmd = m.build_check_command({"type": "http", "url": "http://127.0.0.1:8080/health"})
     assert "http://127.0.0.1:8080/health" in cmd
     assert "http_code" in cmd
+
+def test_check_server_ssh_fail_resolves_dict_service_names(monkeypatch):
+    # On SSH failure, dict service entries must reduce to their string name —
+    # otherwise a dict reaches the DB / incident layer and crashes the cycle.
+    def boom(*a, **k):
+        raise OSError("connection refused")
+    monkeypatch.setattr(m, "_get_ssh_client", boom)
+    server_cfg = {"host": "x", "user": "y",
+                  "services": ["nginx", {"name": "socks", "type": "port", "port": 8088}]}
+    results = m.check_server("S", server_cfg, {"ssh_timeout": 1, "servers": {}})
+    names = [r[0] for r in results]
+    assert "ssh" in names and "nginx" in names and "socks" in names
+    assert all(isinstance(r[0], str) for r in results)

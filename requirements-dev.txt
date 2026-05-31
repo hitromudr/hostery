@@ -1,0 +1,3 @@
+# Dev/test-only dependencies (not needed to run hostery).
+# Install: pip install -r requirements-dev.txt && playwright install chromium
+pytest-playwright

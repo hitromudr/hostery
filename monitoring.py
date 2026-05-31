@@ -440,18 +440,19 @@ def run_check_cycle():
     # Check all servers in parallel
     all_results = {}
     servers = config.get("servers", {})
-    with ThreadPoolExecutor(max_workers=len(servers)) as pool:
-        futures = {
-            pool.submit(check_server, name, cfg, config): name
-            for name, cfg in servers.items()
-        }
-        for future in as_completed(futures):
-            name = futures[future]
-            try:
-                all_results[name] = future.result()
-            except Exception as e:
-                logger.error(f"Check thread error for {name}: {e}")
-                all_results[name] = [("ssh", "fail", str(e), 0)]
+    if servers:
+        with ThreadPoolExecutor(max_workers=len(servers)) as pool:
+            futures = {
+                pool.submit(check_server, name, cfg, config): name
+                for name, cfg in servers.items()
+            }
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    all_results[name] = future.result()
+                except Exception as e:
+                    logger.error(f"Check thread error for {name}: {e}")
+                    all_results[name] = [("ssh", "fail", str(e), 0)]
 
     conn = get_db()
 

@@ -927,6 +927,17 @@
             .ssh-result { font-size: 0.82rem; color: var(--text-muted); }
             .settings-actions { display: flex; gap: 10px; margin-top: 6px; }
             #cfg-msg { margin-top: 12px; font-size: 0.85rem; color: var(--text-muted); }
+            .settings-foot {
+                display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+                margin-top: 20px; padding-top: 14px;
+                border-top: 1px solid var(--border-color);
+                font-size: 0.8rem; color: var(--text-muted);
+            }
+            .settings-foot code {
+                color: var(--text-color); background: var(--bg-color);
+                padding: 2px 7px; border-radius: 5px;
+                font-family: monospace; font-size: 0.78rem;
+            }
             .ssh-result.ok { color: var(--success-color); }
             .ssh-result.warn { color: var(--warning-color); }
             .ssh-result.fail { color: var(--danger-color); }

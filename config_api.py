@@ -76,7 +76,7 @@ def install_cockpit_command(pkg_manager):
 import json
 import threading
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 import monitoring
 
@@ -88,6 +88,20 @@ _install_logs = {}  # server_name -> list[str], streamed install output
 @config_bp.route("/api/config")
 def get_config():
     return jsonify(redact(monitoring.load_config()))
+
+
+@config_bp.route("/api/config/path")
+def get_config_path():
+    return jsonify({"path": str(monitoring.CONFIG_PATH)})
+
+
+@config_bp.route("/api/config/raw")
+def get_config_raw():
+    # Raw view of the config as it is on disk, pretty-printed. The telegram
+    # token is redacted here too — never hand the secret to the browser.
+    cfg = redact(monitoring.load_config())
+    body = json.dumps(cfg, indent=2, ensure_ascii=False)
+    return Response(body, mimetype="text/plain; charset=utf-8")
 
 
 @config_bp.route("/api/config", methods=["POST"])

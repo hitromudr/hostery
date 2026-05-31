@@ -1,4 +1,5 @@
 let _cfg = null;
+let _cfgPath = "";
 let _settingsLoaded = false;
 
 function esc(s) {
@@ -19,6 +20,7 @@ const TIPS = {
   svc_name: "Label shown for this check in Net View.",
   svc_type: "Check kind: systemctl (unit active), port (TCP open), docker (container up), interface / wireguard (link UP), http (status code).",
   svc_target: "Target for the chosen type — systemd unit, port number, container name, interface, or URL.",
+  socks: "Optional SOCKS5 proxy for the SSH connection, as host:port (e.g. an ssh -D / autossh tunnel). Use when the host is only reachable through a proxy.",
 };
 
 function help(key) {
@@ -34,6 +36,8 @@ async function settingsInit() {
 async function settingsReload() {
   const r = await fetch("/api/config");
   _cfg = await r.json();
+  try { _cfgPath = (await (await fetch("/api/config/path")).json()).path || ""; }
+  catch (e) { _cfgPath = ""; }
   renderSettings();
 }
 
@@ -56,11 +60,17 @@ function renderSettings() {
       <button class="btn btn-ghost" onclick="addServer()"><i class="fas fa-plus"></i> Add server</button>
       <button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> Save</button>
     </div>
-    <div id="cfg-msg"></div>`;
+    <div id="cfg-msg"></div>
+    <div class="settings-foot">
+      <span>config file: <code id="cfg-path">${esc(_cfgPath)}</code></span>
+      <a class="btn btn-ghost btn-sm" href="/api/config/raw" target="_blank" rel="noopener"><i class="fas fa-file-code"></i> Open raw</a>
+    </div>`;
 }
 
 function serverCardHTML(name) {
   const s = _cfg.servers[name];
+  const socksStr = s.socks ? (typeof s.socks === "object"
+    ? `${s.socks.host || ""}:${s.socks.port || ""}` : s.socks) : "";
   const services = (s.services || []).map((svc, i) => serviceRowHTML(name, svc, i)).join("");
   return `<div class="card settings-card" data-server="${esc(name)}">
     <div class="settings-card-head">
@@ -72,6 +82,7 @@ function serverCardHTML(name) {
       <label class="field"><span>user${help("user")}</span><input class="srv-user" value="${esc(s.user || "")}" placeholder="ssh user"></label>
       <label class="field"><span>key path${help("key")}</span><input class="srv-key" value="${esc(s.key || "")}" placeholder="~/.ssh/id_rsa"></label>
       <label class="field"><span>cockpit url${help("cockpit")}</span><input class="srv-cockpit" value="${esc(s.cockpit_url || "")}" placeholder="auto"></label>
+      <label class="field"><span>socks proxy${help("socks")}</span><input class="srv-socks" value="${esc(socksStr)}" placeholder="host:port (optional)"></label>
     </div>
     <div class="svc-head">Services</div>
     <div class="svc-cols"><span>name${help("svc_name")}</span><span>type${help("svc_type")}</span><span>target${help("svc_target")}</span><span></span></div>
@@ -98,6 +109,10 @@ function serviceRowHTML(server, svc, i) {
   </div>`;
 }
 
+// Keys the editor owns; everything else on a server (custom_checks, jump,
+// ssh_port, muted, …) is preserved untouched across a Save.
+const MANAGED_KEYS = ["host", "user", "key", "cockpit_url", "socks", "services"];
+
 function collect() {
   const cfg = { check_interval: parseInt(document.getElementById("cfg-interval").value) || 300,
                 telegram: { bot_token: document.getElementById("cfg-tg-token").value,
@@ -105,10 +120,16 @@ function collect() {
   document.querySelectorAll("#cfg-servers .card").forEach(card => {
     const name = card.querySelector(".srv-name").value.trim();
     if (!name) return;
-    const srv = { host: card.querySelector(".srv-host").value.trim(),
+    // Start from the original server object so unmanaged fields survive.
+    const orig = card.querySelector(".srv-name").dataset.orig;
+    const base = (_cfg.servers && _cfg.servers[orig]) ? { ..._cfg.servers[orig] } : {};
+    MANAGED_KEYS.forEach(k => delete base[k]);
+    const srv = { ...base,
+                  host: card.querySelector(".srv-host").value.trim(),
                   user: card.querySelector(".srv-user").value.trim(), services: [] };
     const key = card.querySelector(".srv-key").value.trim(); if (key) srv.key = key;
     const ck = card.querySelector(".srv-cockpit").value.trim(); if (ck) srv.cockpit_url = ck;
+    const sx = card.querySelector(".srv-socks").value.trim(); if (sx) srv.socks = sx;
     card.querySelectorAll(".svc-row").forEach(row => {
       const sn = row.querySelector(".svc-name").value.trim();
       const t = row.querySelector(".svc-type").value;

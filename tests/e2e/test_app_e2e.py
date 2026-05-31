@@ -132,3 +132,34 @@ def test_cockpit_control_renders(page):
     # loadCockpit SSHes once; against the fake fleet it resolves to an "unknown"
     # status chip (or an Install/console control on a real host) — never crashes.
     expect(slot).to_contain_text(re.compile("Cockpit|Install|console|installed"), timeout=20000)
+
+
+# 11 ------------------------------------------------------------------------
+def test_config_path_and_raw_view(page, hostery_server, playwright):
+    _open_settings(page)
+    expect(page.locator("#cfg-path")).not_to_have_text("", timeout=10000)
+    link = page.get_by_role("link", name=re.compile("raw", re.I))
+    expect(link).to_have_attribute("href", "/api/config/raw")
+    rc = playwright.request.new_context(
+        http_credentials={"username": "admin", "password": "pw"})
+    r = rc.get(hostery_server["base_url"] + "/api/config/raw")
+    assert r.status == 200
+    body = r.text()
+    assert "servers" in body and '"bot_token": ""' in body  # token redacted
+    rc.dispose()
+
+
+# 12 ------------------------------------------------------------------------
+def test_save_preserves_custom_checks(page, hostery_server, playwright):
+    # web-01 carries custom_checks the editor doesn't render; a Save must not drop them.
+    _open_settings(page)
+    page.locator("#cfg-interval").fill("321")          # touch a managed field
+    page.get_by_role("button", name=re.compile(r"^\s*Save")).click()
+    expect(page.locator("#cfg-msg")).to_have_text("Saved.", timeout=10000)
+    rc = playwright.request.new_context(
+        http_credentials={"username": "admin", "password": "pw"})
+    cfg = rc.get(hostery_server["base_url"] + "/api/config").json()
+    rc.dispose()
+    assert cfg["check_interval"] == 321
+    cc = cfg["servers"]["web-01"].get("custom_checks", [])
+    assert any(c["name"] == "disk-free" for c in cc), "custom_checks were dropped on save"

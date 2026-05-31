@@ -41,7 +41,10 @@ TEST_CONFIG = {
                 {"name": "app", "type": "docker", "container": "demo"},
                 {"name": "health", "type": "http", "url": "http://127.0.0.1:9/h", "expect_code": 200},
             ],
-            "custom_checks": [],
+            "custom_checks": [
+                {"name": "disk-free", "command": "echo 50", "expect": "> 10",
+                 "severity": "warning", "description": "Root fs free percent"},
+            ],
         },
         "vpn-01": {
             "host": "127.0.0.1", "user": "admin",

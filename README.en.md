@@ -175,3 +175,5 @@ Never disable authentication (`HOSTERY_AUTH=off`) unless a stronger auth layer (
 ```
 
 Unit tests cover the generic sensor fallbacks, the config-driven check model, the timeline/incident machinery, config validation, authentication, and the Cockpit helpers. The E2E suite launches the app against a deterministic test fleet (a fake fleet on `127.0.0.1` so SSH-backed actions fail fast) and drives the SPA in a headless browser across all the main scenarios (auth gate, dashboard metrics, navigation, fleet rendering, the config editor, validation, and the Cockpit controls).
+
+For the module architecture, the theme system, and how screenshots are regenerated, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).

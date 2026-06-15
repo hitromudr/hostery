@@ -211,10 +211,12 @@ function setSettingsMode(mode) {
   const json = document.getElementById("settings-json");
   if (!root || !json) return;
   if (mode === "json") {
-    // Serialize the current form state so unsaved edits carry over.
-    buildJSONEditor(JSON.stringify(collect(), null, 2));
+    // Show the editor BEFORE building it: auto-grow measures scrollHeight, which
+    // is 0 while the container is display:none (collapsed the box to min-height).
     root.style.display = "none";
     json.style.display = "";
+    // Serialize the current form state so unsaved edits carry over.
+    buildJSONEditor(JSON.stringify(collect(), null, 2));
     _settingsMode = "json";
   } else {
     // Going back to the form: parse the editor; block on invalid JSON.
@@ -331,9 +333,10 @@ function importConfig(event) {
   reader.onload = () => {
     const text = String(reader.result);
     // Load straight into the JSON view for review — do NOT auto-save.
-    buildJSONEditor(text);
+    // Show the container BEFORE building so auto-grow can measure scrollHeight.
     document.getElementById("settings-root").style.display = "none";
     document.getElementById("settings-json").style.display = "";
+    buildJSONEditor(text);
     _settingsMode = "json";
     renderToolbar();
     try { JSON.parse(text); }

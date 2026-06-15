@@ -183,7 +183,6 @@ function renderToolbar() {
       <button class="seg-btn ${_settingsMode === 'form' ? 'active' : ''}" onclick="setSettingsMode('form')"><i class="fas fa-table-list"></i> Форма</button>
       <button class="seg-btn ${_settingsMode === 'json' ? 'active' : ''}" onclick="setSettingsMode('json')"><i class="fas fa-code"></i> JSON</button>
     </div>
-    <span class="spacer"></span>
     <button class="btn btn-ghost btn-sm" title="Скачать конфиг файлом" onclick="exportConfig()"><i class="fas fa-upload"></i> Export</button>
     <button class="btn btn-ghost btn-sm" title="Загрузить конфиг из файла" onclick="document.getElementById('settings-import-file').click()"><i class="fas fa-download"></i> Import</button>
     ${treeBtn}

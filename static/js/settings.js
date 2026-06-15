@@ -17,6 +17,7 @@ let _histIndex = -1;      // pointer into _history
 let _histTimer = null;    // debounce for typing snapshots
 let _formBound = false;   // form delegation listeners attached once
 let _jsonTree = false;    // JSON view showing the read-only collapsible tree
+const _treeClosed = new Set(); // tree node paths the user collapsed (persist across toggles)
 
 // --- small helpers ---
 
@@ -128,31 +129,30 @@ function revertSettings() {
   updateActionBars();
 }
 
-function actionBarHTML(pos) {
-  return `<div class="settings-actions-bar" id="settings-actions-${pos}">
-    <button class="btn btn-ghost btn-sm act-undo" title="Undo" onclick="undo()"><i class="fas fa-rotate-left"></i> Undo</button>
-    <button class="btn btn-ghost btn-sm act-redo" title="Redo" onclick="redo()"><i class="fas fa-rotate-right"></i> Redo</button>
-    <button class="btn btn-ghost btn-sm act-revert" title="Revert to last saved" onclick="revertSettings()"><i class="fas fa-clock-rotate-left"></i> Revert</button>
-    <button class="btn btn-primary btn-sm act-save" title="Save" onclick="saveSettings()"><i class="fas fa-save"></i> Save</button>
-    <span class="act-msg" id="settings-msg-${pos}"></span>
-  </div>`;
+function actionButtonsHTML() {
+  return `
+    <button class="btn btn-ghost btn-sm act-undo" title="Отменить последнее изменение" onclick="undo()"><i class="fas fa-rotate-left"></i> Undo</button>
+    <button class="btn btn-ghost btn-sm act-redo" title="Повторить отменённое" onclick="redo()"><i class="fas fa-rotate-right"></i> Redo</button>
+    <button class="btn btn-ghost btn-sm act-revert" title="Откатить к последнему сохранённому" onclick="revertSettings()"><i class="fas fa-clock-rotate-left"></i> Revert</button>
+    <button class="btn btn-primary btn-sm act-save" title="Сохранить" onclick="saveSettings()"><i class="fas fa-save"></i> Save</button>`;
 }
 function renderActionBars() {
+  // The top action group lives in the toolbar row (renderToolbar); here we only
+  // render the bottom (right-aligned) duplicate.
   const top = document.getElementById("settings-actions-top");
+  if (top) top.innerHTML = "";
   const bot = document.getElementById("settings-actions-bottom");
-  if (top) top.innerHTML = actionBarHTML("top");
-  if (bot) bot.innerHTML = actionBarHTML("bottom");
+  if (bot) bot.innerHTML = `<div class="settings-actions-bar">${actionButtonsHTML()}<span class="act-msg"></span></div>`;
   updateActionBars();
 }
 function updateActionBars() {
   const dirty = isDirty();
-  document.querySelectorAll(".settings-actions-bar").forEach((bar) => {
-    const set = (cls, disabled) => { const b = bar.querySelector(cls); if (b) b.disabled = disabled; };
-    set(".act-undo", !canUndo());
-    set(".act-redo", !canRedo());
-    set(".act-revert", !dirty);
-    set(".act-save", !dirty);
-  });
+  // Document-wide: action buttons exist in both the toolbar and the bottom bar.
+  const setAll = (cls, disabled) => document.querySelectorAll(cls).forEach((b) => { b.disabled = disabled; });
+  setAll(".act-undo", !canUndo());
+  setAll(".act-redo", !canRedo());
+  setAll(".act-revert", !dirty);
+  setAll(".act-save", !dirty);
 }
 function setMsg(text, ok) {
   document.querySelectorAll(".act-msg").forEach((el) => {
@@ -166,14 +166,22 @@ function setMsg(text, ok) {
 function renderToolbar() {
   const tb = document.getElementById("settings-toolbar");
   if (!tb) return;
+  // In JSON view, one toggle between editable text and the read-only fold tree.
+  const treeBtn = _settingsMode === "json"
+    ? `<button class="btn btn-ghost btn-sm" id="json-tree-toggle" title="${_jsonTree ? 'Вернуться к редактированию текста' : 'Свернуть в дерево — только просмотр'}" onclick="toggleJSONTree()">${_jsonTree ? '<i class="fas fa-pen"></i> Редактирование' : '<i class="fas fa-eye"></i> Просмотр'}</button>`
+    : "";
   tb.innerHTML = `
     <div class="seg">
       <button class="seg-btn ${_settingsMode === 'form' ? 'active' : ''}" onclick="setSettingsMode('form')"><i class="fas fa-table-list"></i> Форма</button>
       <button class="seg-btn ${_settingsMode === 'json' ? 'active' : ''}" onclick="setSettingsMode('json')"><i class="fas fa-code"></i> JSON</button>
     </div>
+    <button class="btn btn-ghost btn-sm" title="Скачать конфиг файлом" onclick="exportConfig()"><i class="fas fa-upload"></i> Export</button>
+    <button class="btn btn-ghost btn-sm" title="Загрузить конфиг из файла" onclick="document.getElementById('settings-import-file').click()"><i class="fas fa-download"></i> Import</button>
+    ${treeBtn}
+    ${_cfgPath ? `<span class="cfg-path" title="Файл конфига на сервере"><i class="fas fa-file-code"></i> ${esc(_cfgPath)}</span>` : ""}
     <span class="spacer"></span>
-    <button class="btn btn-ghost btn-sm" onclick="exportConfig()"><i class="fas fa-upload"></i> Export</button>
-    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('settings-import-file').click()"><i class="fas fa-download"></i> Import</button>`;
+    ${actionButtonsHTML()}`;
+  updateActionBars();
 }
 
 // --- FORM view ---
@@ -196,14 +204,11 @@ function renderSettings() {
     <div id="cfg-servers">${Object.keys(servers).map(serverCardHTML).join("")}</div>
     <div class="settings-actions">
       <button class="btn btn-ghost" onclick="addServer()"><i class="fas fa-plus"></i> Add server</button>
-    </div>
-    <div class="settings-foot">
-      <span>config file: <code id="cfg-path">${esc(_cfgPath)}</code></span>
     </div>`;
   if (!_formBound) {
     _formBound = true;
-    root.addEventListener("input", onFormInput);
-    root.addEventListener("change", onFormInput);
+    root.addEventListener("input", onFormLiveEdit);   // live: update model + highlights, no history snapshot
+    root.addEventListener("change", onFormCommit);    // commit (field blur / select): one undo step
   }
   refreshFormHighlights();
 }
@@ -215,7 +220,10 @@ function serverCardHTML(name) {
   const isNew = !b;
   const bl = b || {};
   const services = (s.services || []).map((svc, i) => serviceRowHTML(name, svc, bl)).join("");
-  return `<div class="card settings-card${isNew ? " card-new" : ""}" data-server="${esc(name)}">
+  // Stash the full server object on the card so collect() can preserve unmanaged
+  // keys (custom_checks/jump/muted/…) AND their order without depending on the
+  // live _cfg (which a rename would have re-keyed mid-edit, dropping them).
+  return `<div class="card settings-card${isNew ? " card-new" : ""}" data-server="${esc(name)}" data-srv="${esc(JSON.stringify(s))}">
     <div class="settings-card-head">
       <input class="srv-name srv-name-input" data-bl="${esc(name)}" value="${esc(name)}" data-orig="${esc(name)}" placeholder="server name">
       <button class="btn btn-danger btn-icon" title="Remove server" onclick="removeServer('${esc(name)}')"><i class="fas fa-trash"></i></button>
@@ -257,7 +265,7 @@ function serviceRowHTML(server, svc, baselineSrv) {
     <input class="svc-name" data-bl="${esc(blName)}" value="${esc(o.name || "")}" placeholder="name">
     <select class="svc-type" data-bl="${esc(blType)}">${opts}</select>
     <input class="svc-param" data-bl="${esc(blParam)}" value="${esc(param)}" placeholder="unit / port / container / iface / url">
-    <button class="svc-del" title="Remove" onclick="this.closest('.svc-row').remove(); onFormInput();">×</button>
+    <button class="svc-del" title="Remove" onclick="this.closest('.svc-row').remove(); onFormCommit();">×</button>
   </div>`;
 }
 
@@ -272,15 +280,17 @@ function collect() {
   document.querySelectorAll("#cfg-servers .card").forEach((card) => {
     const name = card.querySelector(".srv-name").value.trim();
     if (!name) return;
-    const orig = card.querySelector(".srv-name").dataset.orig;
-    const base = (_cfg.servers && _cfg.servers[orig]) ? { ..._cfg.servers[orig] } : {};
-    MANAGED_KEYS.forEach((k) => delete base[k]);
-    const srv = { ...base,
-                  host: card.querySelector(".srv-host").value.trim(),
-                  user: card.querySelector(".srv-user").value.trim(), services: [] };
-    const key = card.querySelector(".srv-key").value.trim(); if (key) srv.key = key;
-    const ck = card.querySelector(".srv-cockpit").value.trim(); if (ck) srv.cockpit_url = ck;
-    const sx = card.querySelector(".srv-socks").value.trim(); if (sx) srv.socks = sx;
+    // Base = the render-time server snapshot stored on the card (stable across
+    // live edits and renames); update managed keys in place so unmanaged keys
+    // and their order survive and the diff shows only real changes.
+    let srv;
+    try { srv = JSON.parse(card.dataset.srv || "{}"); } catch (e) { srv = {}; }
+    srv.host = card.querySelector(".srv-host").value.trim();
+    srv.user = card.querySelector(".srv-user").value.trim();
+    const key = card.querySelector(".srv-key").value.trim(); if (key) srv.key = key; else delete srv.key;
+    const ck = card.querySelector(".srv-cockpit").value.trim(); if (ck) srv.cockpit_url = ck; else delete srv.cockpit_url;
+    const sx = card.querySelector(".srv-socks").value.trim(); if (sx) srv.socks = sx; else delete srv.socks;
+    srv.services = [];
     card.querySelectorAll(".svc-row").forEach((row) => {
       const sn = row.querySelector(".svc-name").value.trim();
       const t = row.querySelector(".svc-type").value;
@@ -304,10 +314,17 @@ function collect() {
   return cfg;
 }
 
-// Form edited → pull DOM into _cfg, snapshot, repaint highlights.
-function onFormInput() {
+// Live edit (keystroke): update the model + highlights + dirty live, but do NOT
+// snapshot — that would collapse a whole typing burst into one undo step.
+function onFormLiveEdit() {
   _cfg = collect();
-  pushHistoryDebounced();
+  refreshFormHighlights();
+  updateActionBars();
+}
+// Commit (field blur / select change / add/remove row): one undo step per field.
+function onFormCommit() {
+  _cfg = collect();
+  pushHistory();
   refreshFormHighlights();
 }
 
@@ -371,7 +388,7 @@ function addService(name) {
   if (card) {
     card.querySelector(".srv-services").insertAdjacentHTML("beforeend",
       serviceRowHTML(name, { name: "", type: "systemctl" }, {}));
-    onFormInput();
+    onFormCommit();
   }
 }
 
@@ -412,10 +429,6 @@ function renderJSONFromCfg() {
 function buildJSONEditor(text) {
   const json = document.getElementById("settings-json");
   json.innerHTML = `
-    <div class="json-subbar">
-      <button class="btn btn-ghost btn-sm" id="json-tree-toggle" onclick="toggleJSONTree()"><i class="fas fa-sitemap"></i> Дерево</button>
-      <span class="json-subbar-hint" id="json-tree-hint"></span>
-    </div>
     <div class="json-edit-wrap">
       <pre id="settings-json-hl" aria-hidden="true"></pre>
       <textarea id="settings-json-input" spellcheck="false" autocomplete="off"
@@ -433,39 +446,46 @@ function buildJSONEditor(text) {
 function toggleJSONTree() {
   const wrap = document.querySelector("#settings-json .json-edit-wrap");
   const tree = document.getElementById("settings-json-tree");
-  const btn = document.getElementById("json-tree-toggle");
-  const hint = document.getElementById("json-tree-hint");
   const ta = document.getElementById("settings-json-input");
   if (!wrap || !tree || !ta) return;
   if (!_jsonTree) {
     let obj;
     try { obj = JSON.parse(ta.value); }
-    catch (e) { showJSONError("Невалидный JSON — дерево недоступно: " + e.message); return; }
-    tree.innerHTML = jsonTreeNode(null, obj, true);
+    catch (e) { showJSONError("Невалидный JSON — просмотр недоступен: " + e.message); return; }
+    tree.innerHTML = jsonTreeNode(null, obj, true, "$");
     wrap.style.display = "none";
     tree.style.display = "";
     _jsonTree = true;
-    btn.innerHTML = '<i class="fas fa-code"></i> Текст';
-    if (hint) hint.textContent = "только просмотр — для правки вернитесь в «Текст»";
   } else {
     tree.style.display = "none";
     wrap.style.display = "";
     _jsonTree = false;
-    btn.innerHTML = '<i class="fas fa-sitemap"></i> Дерево';
-    if (hint) hint.textContent = "";
     renderJSONHighlight();
   }
+  renderToolbar();  // refresh the toggle button (Просмотр ↔ Редактирование)
 }
 
-function jsonTreeNode(key, val, last) {
+// Collapsed-node state is keyed by path so it survives Просмотр↔Редактирование
+// toggles and edits. _treeClosed holds the paths the user has collapsed.
+function onTreeToggle(el) {
+  const p = el.dataset.tpath || "";
+  if (el.open) _treeClosed.delete(p); else _treeClosed.add(p);
+}
+
+function jsonTreeNode(key, val, last, path) {
   const comma = last ? "" : ",";
   const k = key === null ? "" : `<span class="j-key">"${esc(key)}"</span>: `;
   if (val !== null && typeof val === "object") {
     const isArr = Array.isArray(val);
     const entries = isArr ? val.map((v) => [null, v]) : Object.entries(val);
     const open = isArr ? "[" : "{", close = isArr ? "]" : "}";
-    const inner = entries.map((e, i) => jsonTreeNode(e[0], e[1], i === entries.length - 1)).join("");
-    return `<details open class="jt"><summary>${k}${open}<span class="jt-count">${entries.length}</span></summary>`
+    const inner = entries.map((e, i) => {
+      const childPath = path + (isArr ? "[" + i + "]" : "." + e[0]);
+      return jsonTreeNode(e[0], e[1], i === entries.length - 1, childPath);
+    }).join("");
+    const openAttr = _treeClosed.has(path) ? "" : " open";
+    return `<details${openAttr} class="jt" data-tpath="${esc(path)}" ontoggle="onTreeToggle(this)">`
+      + `<summary>${k}${open}<span class="jt-count">${entries.length}</span></summary>`
       + `<div class="jt-body">${inner}</div><div class="jt-close">${close}${comma}</div></details>`;
   }
   const cls = typeof val === "number" ? "j-num" : typeof val === "boolean" ? "j-bool" : val === null ? "j-null" : "j-str";

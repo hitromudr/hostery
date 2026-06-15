@@ -39,6 +39,7 @@ async function settingsReload() {
   try { _cfgPath = (await (await fetch("/api/config/path")).json()).path || ""; }
   catch (e) { _cfgPath = ""; }
   renderSettings();
+  renderToolbar();
 }
 
 function renderSettings() {
@@ -63,7 +64,6 @@ function renderSettings() {
     <div id="cfg-msg"></div>
     <div class="settings-foot">
       <span>config file: <code id="cfg-path">${esc(_cfgPath)}</code></span>
-      <a class="btn btn-ghost btn-sm" href="${window.APP_PREFIX || ''}/api/config/raw" target="_blank" rel="noopener"><i class="fas fa-file-code"></i> Open raw</a>
     </div>`;
 }
 
@@ -183,4 +183,175 @@ function addService(name) {
   const card = [...document.querySelectorAll('#cfg-servers .card')].find(c => c.querySelector('.srv-name').value === name);
   if (card) card.querySelector(".srv-services").insertAdjacentHTML("beforeend",
     serviceRowHTML(name, { name: "", type: "systemctl" }, 0));
+}
+
+// --- Raw JSON editor: Form <-> JSON toggle, import/export, syntax highlight ---
+// The form only manages a subset of keys (host/user/key/cockpit_url/socks/
+// services). custom_checks, jump, muted, ssh_port, … live only in the raw JSON,
+// so the JSON view is the way to see/edit them. collect() preserves those
+// unmanaged keys on a form Save, so switching views never drops data.
+
+let _settingsMode = "form"; // "form" | "json"
+
+function renderToolbar() {
+  const tb = document.getElementById("settings-toolbar");
+  if (!tb) return;
+  tb.innerHTML = `
+    <div class="seg">
+      <button class="seg-btn ${_settingsMode === 'form' ? 'active' : ''}" onclick="setSettingsMode('form')"><i class="fas fa-table-list"></i> Форма</button>
+      <button class="seg-btn ${_settingsMode === 'json' ? 'active' : ''}" onclick="setSettingsMode('json')"><i class="fas fa-code"></i> JSON</button>
+    </div>
+    <span class="spacer"></span>
+    <button class="btn btn-ghost btn-sm" onclick="exportConfig()"><i class="fas fa-download"></i> Export</button>
+    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('settings-import-file').click()"><i class="fas fa-upload"></i> Import</button>`;
+}
+
+function setSettingsMode(mode) {
+  const root = document.getElementById("settings-root");
+  const json = document.getElementById("settings-json");
+  if (!root || !json) return;
+  if (mode === "json") {
+    // Serialize the current form state so unsaved edits carry over.
+    buildJSONEditor(JSON.stringify(collect(), null, 2));
+    root.style.display = "none";
+    json.style.display = "";
+    _settingsMode = "json";
+  } else {
+    // Going back to the form: parse the editor; block on invalid JSON.
+    if (_settingsMode === "json") {
+      const ta = document.getElementById("settings-json-input");
+      if (ta) {
+        try {
+          _cfg = JSON.parse(ta.value);
+        } catch (e) {
+          showJSONError("Невалидный JSON — исправьте перед переключением на форму:\n" + e.message);
+          return; // stay in JSON mode
+        }
+        renderSettings();
+      }
+    }
+    json.style.display = "none";
+    root.style.display = "";
+    _settingsMode = "form";
+  }
+  renderToolbar();
+}
+
+function buildJSONEditor(text) {
+  const json = document.getElementById("settings-json");
+  json.innerHTML = `
+    <div class="json-edit-wrap">
+      <pre id="settings-json-hl" aria-hidden="true"></pre>
+      <textarea id="settings-json-input" spellcheck="false" autocomplete="off"
+                oninput="syncJSONHighlight()" onscroll="syncJSONHighlight()"></textarea>
+    </div>
+    <div class="settings-json-actions">
+      <button class="btn btn-primary" onclick="saveJSON()"><i class="fas fa-save"></i> Save</button>
+      <span id="settings-json-error"></span>
+    </div>`;
+  document.getElementById("settings-json-input").value = text;
+  syncJSONHighlight();
+}
+
+function highlightJSON(src) {
+  const esc = String(src).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return esc.replace(
+    /("(?:\\.|[^"\\])*"(?:\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+    (m) => {
+      let cls = "j-num";
+      if (m[0] === '"') cls = /:\s*$/.test(m) ? "j-key" : "j-str";
+      else if (m === "true" || m === "false") cls = "j-bool";
+      else if (m === "null") cls = "j-null";
+      return `<span class="${cls}">${m}</span>`;
+    }
+  );
+}
+
+function syncJSONHighlight() {
+  const ta = document.getElementById("settings-json-input");
+  const hl = document.getElementById("settings-json-hl");
+  if (!ta || !hl) return;
+  // Trailing newline keeps the last line aligned with the textarea.
+  hl.innerHTML = highlightJSON(ta.value) + "\n";
+  hl.scrollTop = ta.scrollTop;
+  hl.scrollLeft = ta.scrollLeft;
+  showJSONError("");
+}
+
+function showJSONError(msg, ok) {
+  const err = document.getElementById("settings-json-error");
+  if (!err) return;
+  err.style.color = ok ? "var(--success-color)" : "var(--danger-color)";
+  err.textContent = msg || "";
+}
+
+async function saveJSON() {
+  const ta = document.getElementById("settings-json-input");
+  if (!ta) return;
+  let cfg;
+  try {
+    cfg = JSON.parse(ta.value);
+  } catch (e) {
+    showJSONError("Невалидный JSON: " + e.message);
+    return;
+  }
+  const r = await fetch("/api/config", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cfg),
+  });
+  const d = await r.json();
+  if (r.ok) {
+    _cfg = cfg;
+    showJSONError("Saved.", true);
+  } else {
+    showJSONError("Errors: " + (d.errors || [d.error || "save failed"]).join("; "));
+  }
+}
+
+function exportConfig() {
+  let obj;
+  if (_settingsMode === "json") {
+    const ta = document.getElementById("settings-json-input");
+    try { obj = JSON.parse(ta.value); }
+    catch (e) { showJSONError("Невалидный JSON, экспорт отменён: " + e.message); return; }
+  } else {
+    obj = collect();
+  }
+  // The telegram token is already blank here (form never exposes it), so the
+  // export carries no secret.
+  downloadJSON(`hostery-config-${todayStamp()}.json`, JSON.stringify(obj, null, 2));
+}
+
+function importConfig(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = ""; // allow re-importing the same file
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = String(reader.result);
+    // Load straight into the JSON view for review — do NOT auto-save.
+    buildJSONEditor(text);
+    document.getElementById("settings-root").style.display = "none";
+    document.getElementById("settings-json").style.display = "";
+    _settingsMode = "json";
+    renderToolbar();
+    try { JSON.parse(text); }
+    catch (e) { showJSONError("Импортированный файл — невалидный JSON: " + e.message); }
+  };
+  reader.readAsText(file);
+}
+
+function downloadJSON(filename, text) {
+  const blob = new Blob([text], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+
+function todayStamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }

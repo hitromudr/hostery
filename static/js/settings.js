@@ -186,6 +186,7 @@ function renderToolbar() {
     <button class="btn btn-ghost btn-sm" title="Скачать конфиг файлом" onclick="exportConfig()"><i class="fas fa-upload"></i> Export</button>
     <button class="btn btn-ghost btn-sm" title="Загрузить конфиг из файла" onclick="document.getElementById('settings-import-file').click()"><i class="fas fa-download"></i> Import</button>
     ${treeBtn}
+    <span class="spacer"></span>
     ${actionButtonsHTML()}`;
   const hdr = document.getElementById("cfg-path-hdr");
   if (hdr) hdr.textContent = _cfgPath || "";

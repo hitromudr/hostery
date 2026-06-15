@@ -5,6 +5,72 @@ let monStatusData = null;
 let monMutedData = {};
 const _cockpitSeen = new Set();
 
+// --- Drag-to-reorder state + order persistence ---
+const MON_ORDER_KEY = "hostery_server_order";
+let monDraggedCard = null;
+let monIsDragging = false;
+
+function getSavedServerOrder() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(MON_ORDER_KEY) || "[]");
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function applyServerOrder(names) {
+  const saved = getSavedServerOrder();
+  if (!saved.length) return names;
+  const known = saved.filter((n) => names.includes(n));
+  const rest = names.filter((n) => !known.includes(n));
+  return known.concat(rest);
+}
+
+function saveServerOrder() {
+  const order = Array.from(
+    document.querySelectorAll("#mon-servers .server-card[data-server]"),
+  ).map((el) => el.dataset.server);
+  localStorage.setItem(MON_ORDER_KEY, JSON.stringify(order));
+}
+
+function monArmDrag(e) {
+  const card = e.currentTarget.closest(".server-card");
+  if (!card) return;
+  card.draggable = true;
+  document.addEventListener("mouseup", () => { card.draggable = false; }, { once: true });
+}
+function monDragStart(e) {
+  monDraggedCard = e.currentTarget;
+  monIsDragging = true;
+  monDraggedCard.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+}
+function monDragOver(e) {
+  if (!monDraggedCard || e.currentTarget === monDraggedCard) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  e.currentTarget.classList.add("drag-over");
+}
+function monDragLeave(e) { e.currentTarget.classList.remove("drag-over"); }
+function monDrop(e) {
+  e.preventDefault();
+  const target = e.currentTarget;
+  target.classList.remove("drag-over");
+  if (!monDraggedCard || target === monDraggedCard) return;
+  const rect = target.getBoundingClientRect();
+  const before = e.clientX < rect.left + rect.width / 2;
+  target.parentNode.insertBefore(monDraggedCard, before ? target : target.nextSibling);
+  saveServerOrder();
+}
+function monDragEnd() {
+  if (monDraggedCard) {
+    monDraggedCard.classList.remove("dragging");
+    monDraggedCard.draggable = false;
+    monDraggedCard = null;
+  }
+  monIsDragging = false;
+  document.querySelectorAll("#mon-servers .drag-over").forEach((el) => el.classList.remove("drag-over"));
+}
+
 function formatDurationShort(seconds) {
   const s = Math.max(0, Math.round(seconds));
   if (s < 60) return s + "s";
@@ -94,6 +160,7 @@ async function fetchMonAll() {
 }
 
 async function fetchMonStatus() {
+  if (monIsDragging) return;  // defer status refresh while user is dragging
   try {
     // Snapshot expanded panels so we can restore them after re-render
     const expandedSvc = [];
@@ -163,8 +230,9 @@ function renderMonServers(data) {
   const container = document.getElementById("mon-servers");
   if (!container) return;
 
+  if (monIsDragging) return;  // never re-render mid-drag (root cause of dup bug)
   const servers = data.servers || {};
-  const names = Object.keys(servers);
+  const names = applyServerOrder(Object.keys(servers));
 
   if (!names.length) {
     container.innerHTML =
@@ -172,8 +240,7 @@ function renderMonServers(data) {
     return;
   }
 
-  container.innerHTML = names
-    .map((name) => {
+  const buildCard = (name) => {
       const s = servers[name];
       const services = s.services || {};
       const svcNames = Object.keys(services);
@@ -212,8 +279,10 @@ function renderMonServers(data) {
       const compact = localStorage.getItem("mon-compact") === "1";
 
       return `
-        <div class="card server-card ${compact ? "compact" : ""}">
-          <div class="server-header">
+        <div class="card server-card ${compact ? "compact" : ""}" data-server="${name}"
+             ondragstart="monDragStart(event)" ondragover="monDragOver(event)"
+             ondragleave="monDragLeave(event)" ondrop="monDrop(event)" ondragend="monDragEnd(event)">
+          <div class="server-header" onmousedown="monArmDrag(event)">
             <div>
               <div class="server-name">${name}${badges}</div>
               <div class="server-ip">${s.host || ""}</div>
@@ -302,8 +371,32 @@ function renderMonServers(data) {
           <div id="svc-detail-${name}" class="svc-detail-panel" style="display: none;"></div>
         </div>
       `;
-    })
-    .join("");
+  };
+
+  // Reconcile keyed by data-server: update-in-place, add/remove, reorder.
+  // Never wipe the whole list, so a card being dragged is never orphaned
+  // (that orphaning was the root cause of the duplicate-card bug).
+  const seen = new Set();
+  for (const name of names) {
+    seen.add(name);
+    const tmp = document.createElement("div");
+    tmp.innerHTML = buildCard(name);
+    const fresh = tmp.firstElementChild;
+    const card = container.querySelector(`.server-card[data-server="${CSS.escape(name)}"]`);
+    if (!card) {
+      container.appendChild(fresh);
+    } else {
+      card.className = fresh.className;
+      card.innerHTML = fresh.innerHTML;
+    }
+  }
+  container.querySelectorAll(".server-card[data-server]").forEach((el) => {
+    if (!seen.has(el.dataset.server)) el.remove();
+  });
+  names.forEach((name) => {
+    const el = container.querySelector(`.server-card[data-server="${CSS.escape(name)}"]`);
+    if (el) container.appendChild(el);
+  });
 
   // After the card list DOM is in place, populate each server's Cockpit slot.
   names.forEach((name) => {

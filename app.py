@@ -3,6 +3,7 @@ import os
 import time
 
 from flask import Flask, jsonify, make_response, render_template
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import auth
 import monitoring
@@ -15,6 +16,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+# Honour reverse-proxy headers (X-Forwarded-Prefix) so hostery can be served
+# under a subpath, e.g. /monitoring/ when embedded in an AI Cockpit iframe.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 auth.init_auth(app, os.environ.get("HOSTERY_AUTH"))
 app.register_blueprint(monitoring_bp)
 app.register_blueprint(config_bp)

@@ -26,6 +26,25 @@
                 } catch (e) {}
             })();
         </script>
+        <script>
+            // Subpath awareness: when hostery is proxied under a prefix (e.g.
+            // /monitoring/ in an iframe), ProxyFix sets request.script_root, so
+            // url_for() already prefixes static assets. The JS, however, calls
+            // absolute "/api/..." paths — transparently prefix those via a fetch
+            // shim. No-op when served at the root (APP_PREFIX === "").
+            window.APP_PREFIX = "{{ request.script_root }}";
+            (function () {
+                var P = window.APP_PREFIX || "";
+                if (!P) return;
+                var orig = window.fetch.bind(window);
+                window.fetch = function (input, init) {
+                    if (typeof input === "string" && input.indexOf("/api") === 0) {
+                        input = P + input;
+                    }
+                    return orig(input, init);
+                };
+            })();
+        </script>
         <style>
             :root {
                 --bg-color: #1a1b26;
@@ -77,6 +96,12 @@
                 height: 100vh;
                 overflow: hidden;
             }
+
+            /* Embed mode (?embed=1): hide the sidebar/nav chrome. Body is flex,
+               so hiding the sidebar lets main-content fill the width. In-view
+               toggle buttons (.embed-only) replace the hidden nav. */
+            body.embed #main-sidebar { display: none !important; }
+            body:not(.embed) .embed-only { display: none; }
 
             /* Sidebar */
             .sidebar {
@@ -1199,6 +1224,9 @@
                         <button class="btn btn-ghost" onclick="monCheckNow(this)" id="btn-check-now">
                             <i class="fas fa-sync"></i> Check Now
                         </button>
+                        <button class="btn btn-ghost embed-only" onclick="showView('settings')" title="Edit monitoring config">
+                            <i class="fas fa-cog"></i> Settings
+                        </button>
                     </div>
                 </div>
 
@@ -1220,7 +1248,12 @@
 
             <!-- VIEW: SETTINGS -->
             <div id="view-settings" class="view-section">
-                <div class="header-row"><h2>Settings</h2></div>
+                <div class="header-row">
+                    <h2>Settings</h2>
+                    <button class="btn btn-ghost embed-only" onclick="showView('monitoring')" title="Back to Net View">
+                        <i class="fas fa-arrow-left"></i> Net View
+                    </button>
+                </div>
                 <div id="settings-root"></div>
             </div>
 

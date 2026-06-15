@@ -63,7 +63,7 @@ function renderSettings() {
     <div id="cfg-msg"></div>
     <div class="settings-foot">
       <span>config file: <code id="cfg-path">${esc(_cfgPath)}</code></span>
-      <a class="btn btn-ghost btn-sm" href="/api/config/raw" target="_blank" rel="noopener"><i class="fas fa-file-code"></i> Open raw</a>
+      <a class="btn btn-ghost btn-sm" href="${window.APP_PREFIX || ''}/api/config/raw" target="_blank" rel="noopener"><i class="fas fa-file-code"></i> Open raw</a>
     </div>`;
 }
 

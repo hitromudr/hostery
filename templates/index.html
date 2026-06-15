@@ -97,16 +97,11 @@
                 overflow: hidden;
             }
 
-            /* Embed mode (?embed=1): hide chrome, show a floating settings gear.
-               Body is flex, so hiding the sidebar lets main-content fill width. */
+            /* Embed mode (?embed=1): hide the sidebar/nav chrome. Body is flex,
+               so hiding the sidebar lets main-content fill the width. In-view
+               toggle buttons (.embed-only) replace the hidden nav. */
             body.embed #main-sidebar { display: none !important; }
-            #embed-settings-gear {
-                position: fixed;
-                top: 12px;
-                right: 14px;
-                z-index: 50;
-            }
-            body:not(.embed) #embed-settings-gear { display: none; }
+            body:not(.embed) .embed-only { display: none; }
 
             /* Sidebar */
             .sidebar {
@@ -1053,11 +1048,6 @@
         </style>
     </head>
     <body>
-        <!-- Floating settings access for embed mode (sidebar is hidden) -->
-        <button id="embed-settings-gear" class="btn btn-ghost" title="Settings"
-                onclick="showView(document.getElementById('view-settings').classList.contains('active') ? 'monitoring' : 'settings')">
-            <i class="fas fa-cog"></i>
-        </button>
         <!-- Sidebar -->
         <div class="sidebar" id="main-sidebar">
             <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
@@ -1234,6 +1224,9 @@
                         <button class="btn btn-ghost" onclick="monCheckNow(this)" id="btn-check-now">
                             <i class="fas fa-sync"></i> Check Now
                         </button>
+                        <button class="btn btn-ghost embed-only" onclick="showView('settings')" title="Edit monitoring config">
+                            <i class="fas fa-cog"></i> Settings
+                        </button>
                     </div>
                 </div>
 
@@ -1255,7 +1248,12 @@
 
             <!-- VIEW: SETTINGS -->
             <div id="view-settings" class="view-section">
-                <div class="header-row"><h2>Settings</h2></div>
+                <div class="header-row">
+                    <h2>Settings</h2>
+                    <button class="btn btn-ghost embed-only" onclick="showView('monitoring')" title="Back to Net View">
+                        <i class="fas fa-arrow-left"></i> Net View
+                    </button>
+                </div>
                 <div id="settings-root"></div>
             </div>
 

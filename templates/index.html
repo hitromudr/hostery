@@ -26,6 +26,25 @@
                 } catch (e) {}
             })();
         </script>
+        <script>
+            // Subpath awareness: when hostery is proxied under a prefix (e.g.
+            // /monitoring/ in an iframe), ProxyFix sets request.script_root, so
+            // url_for() already prefixes static assets. The JS, however, calls
+            // absolute "/api/..." paths — transparently prefix those via a fetch
+            // shim. No-op when served at the root (APP_PREFIX === "").
+            window.APP_PREFIX = "{{ request.script_root }}";
+            (function () {
+                var P = window.APP_PREFIX || "";
+                if (!P) return;
+                var orig = window.fetch.bind(window);
+                window.fetch = function (input, init) {
+                    if (typeof input === "string" && input.indexOf("/api") === 0) {
+                        input = P + input;
+                    }
+                    return orig(input, init);
+                };
+            })();
+        </script>
         <style>
             :root {
                 --bg-color: #1a1b26;

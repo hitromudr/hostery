@@ -1084,6 +1084,20 @@
             .j-bool { color: #bb9af7; } .j-null { color: #f7768e; }
             .settings-json-foot { margin-top: 10px; }
             #settings-json-error { color: var(--danger-color); font-size: 0.85rem; min-height: 1.2em; white-space: pre-wrap; }
+            /* JSON read-only collapsible tree (folding via native <details>) */
+            .json-subbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+            .json-subbar-hint { color: var(--text-muted); font-size: 0.8rem; }
+            .json-tree {
+                font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+                font-size: 0.82rem; line-height: 1.5; color: var(--text-color);
+                border: 1px solid var(--border-color); border-radius: 8px; background: #1a1b26;
+                padding: 12px 14px; max-height: 62vh; overflow: auto;
+            }
+            .json-tree summary { cursor: pointer; outline: none; }
+            .json-tree .jt-body { padding-left: 1.4em; border-left: 1px solid rgba(255,255,255,0.07); margin-left: 3px; }
+            .json-tree .jt-leaf { white-space: pre-wrap; word-break: break-all; }
+            .json-tree .jt-count { color: var(--text-muted); font-size: 0.72rem; margin-left: 5px; }
+            .json-tree .jt-close { color: var(--text-color); }
             .settings-actions { display: flex; gap: 10px; margin-top: 6px; }
             #cfg-msg { margin-top: 12px; font-size: 0.85rem; color: var(--text-muted); }
             .settings-foot {

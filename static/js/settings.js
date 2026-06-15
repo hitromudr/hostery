@@ -16,6 +16,7 @@ let _history = [];        // pretty-JSON snapshots of _cfg
 let _histIndex = -1;      // pointer into _history
 let _histTimer = null;    // debounce for typing snapshots
 let _formBound = false;   // form delegation listeners attached once
+let _jsonTree = false;    // JSON view showing the read-only collapsible tree
 
 // --- small helpers ---
 
@@ -411,14 +412,65 @@ function renderJSONFromCfg() {
 function buildJSONEditor(text) {
   const json = document.getElementById("settings-json");
   json.innerHTML = `
+    <div class="json-subbar">
+      <button class="btn btn-ghost btn-sm" id="json-tree-toggle" onclick="toggleJSONTree()"><i class="fas fa-sitemap"></i> Дерево</button>
+      <span class="json-subbar-hint" id="json-tree-hint"></span>
+    </div>
     <div class="json-edit-wrap">
       <pre id="settings-json-hl" aria-hidden="true"></pre>
       <textarea id="settings-json-input" spellcheck="false" autocomplete="off"
                 oninput="onJSONInput()"></textarea>
     </div>
+    <div id="settings-json-tree" class="json-tree" style="display:none"></div>
     <div class="settings-json-foot"><span id="settings-json-error"></span></div>`;
   document.getElementById("settings-json-input").value = text;
+  _jsonTree = false;
   renderJSONHighlight();
+}
+
+// Read-only collapsible tree (native <details>) for navigating large configs.
+// Editing stays in the raw textarea / form — the tree never mutates the config.
+function toggleJSONTree() {
+  const wrap = document.querySelector("#settings-json .json-edit-wrap");
+  const tree = document.getElementById("settings-json-tree");
+  const btn = document.getElementById("json-tree-toggle");
+  const hint = document.getElementById("json-tree-hint");
+  const ta = document.getElementById("settings-json-input");
+  if (!wrap || !tree || !ta) return;
+  if (!_jsonTree) {
+    let obj;
+    try { obj = JSON.parse(ta.value); }
+    catch (e) { showJSONError("Невалидный JSON — дерево недоступно: " + e.message); return; }
+    tree.innerHTML = jsonTreeNode(null, obj, true);
+    wrap.style.display = "none";
+    tree.style.display = "";
+    _jsonTree = true;
+    btn.innerHTML = '<i class="fas fa-code"></i> Текст';
+    if (hint) hint.textContent = "только просмотр — для правки вернитесь в «Текст»";
+  } else {
+    tree.style.display = "none";
+    wrap.style.display = "";
+    _jsonTree = false;
+    btn.innerHTML = '<i class="fas fa-sitemap"></i> Дерево';
+    if (hint) hint.textContent = "";
+    renderJSONHighlight();
+  }
+}
+
+function jsonTreeNode(key, val, last) {
+  const comma = last ? "" : ",";
+  const k = key === null ? "" : `<span class="j-key">"${esc(key)}"</span>: `;
+  if (val !== null && typeof val === "object") {
+    const isArr = Array.isArray(val);
+    const entries = isArr ? val.map((v) => [null, v]) : Object.entries(val);
+    const open = isArr ? "[" : "{", close = isArr ? "]" : "}";
+    const inner = entries.map((e, i) => jsonTreeNode(e[0], e[1], i === entries.length - 1)).join("");
+    return `<details open class="jt"><summary>${k}${open}<span class="jt-count">${entries.length}</span></summary>`
+      + `<div class="jt-body">${inner}</div><div class="jt-close">${close}${comma}</div></details>`;
+  }
+  const cls = typeof val === "number" ? "j-num" : typeof val === "boolean" ? "j-bool" : val === null ? "j-null" : "j-str";
+  const disp = typeof val === "string" ? `"${esc(val)}"` : String(val);
+  return `<div class="jt-leaf">${k}<span class="${cls}">${disp}</span>${comma}</div>`;
 }
 
 // Tokenize one line of JSON into syntax-highlighted HTML.

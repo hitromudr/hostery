@@ -202,8 +202,8 @@ function renderToolbar() {
       <button class="seg-btn ${_settingsMode === 'json' ? 'active' : ''}" onclick="setSettingsMode('json')"><i class="fas fa-code"></i> JSON</button>
     </div>
     <span class="spacer"></span>
-    <button class="btn btn-ghost btn-sm" onclick="exportConfig()"><i class="fas fa-download"></i> Export</button>
-    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('settings-import-file').click()"><i class="fas fa-upload"></i> Import</button>`;
+    <button class="btn btn-ghost btn-sm" onclick="exportConfig()"><i class="fas fa-upload"></i> Export</button>
+    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('settings-import-file').click()"><i class="fas fa-download"></i> Import</button>`;
 }
 
 function setSettingsMode(mode) {

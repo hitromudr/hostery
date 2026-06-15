@@ -78,6 +78,17 @@
                 overflow: hidden;
             }
 
+            /* Embed mode (?embed=1): hide chrome, show a floating settings gear.
+               Body is flex, so hiding the sidebar lets main-content fill width. */
+            body.embed #main-sidebar { display: none !important; }
+            #embed-settings-gear {
+                position: fixed;
+                top: 12px;
+                right: 14px;
+                z-index: 50;
+            }
+            body:not(.embed) #embed-settings-gear { display: none; }
+
             /* Sidebar */
             .sidebar {
                 width: 250px;
@@ -1023,6 +1034,11 @@
         </style>
     </head>
     <body>
+        <!-- Floating settings access for embed mode (sidebar is hidden) -->
+        <button id="embed-settings-gear" class="btn btn-ghost" title="Settings"
+                onclick="showView(document.getElementById('view-settings').classList.contains('active') ? 'monitoring' : 'settings')">
+            <i class="fas fa-cog"></i>
+        </button>
         <!-- Sidebar -->
         <div class="sidebar" id="main-sidebar">
             <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>

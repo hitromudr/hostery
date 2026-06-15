@@ -471,7 +471,28 @@ function setupResizable(handleId, panelId, storageKey, minW, maxW) {
 
 // --- Initialization ---
 
+// --- Embed mode (?embed=1) + forced theme (?theme=dark|light) ---
+// Lets a parent page (e.g. AI Cockpit) host the Net View in an iframe without
+// the hostery chrome and with a pinned theme.
+function applyEmbedAndTheme() {
+  const q = new URLSearchParams(window.location.search);
+  const theme = q.get("theme");
+  if (theme === "dark" || theme === "light") {
+    document.documentElement.classList.toggle("theme-light", theme === "light");
+    try { localStorage.setItem("hostery_theme", theme); } catch (e) {}
+    if (typeof _applyThemeUI === "function") _applyThemeUI();
+  }
+  if (q.get("embed") === "1") {
+    document.body.classList.add("embed");
+    const sb = document.getElementById("main-sidebar");
+    if (sb) sb.style.display = "none";
+    // default to Net View unless the hash already targets a view
+    if (!window.location.hash) showView("monitoring", true);
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
+  applyEmbedAndTheme();
   // Start Clock
   timeInterval = setInterval(updateTime, 1000);
   updateTime();

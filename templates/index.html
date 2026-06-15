@@ -964,7 +964,7 @@
             .code-output.success { color: var(--success-color); }
 
             /* --- Settings editor --- */
-            #settings-root { max-width: 1080px; }
+            #settings-root { max-width: 1080px; margin-top: 16px; }  /* gap below the toolbar = inter-card gap */
             .settings-card { padding: 18px 20px; margin-bottom: 16px; }
             .settings-card-head {
                 display: flex; align-items: center; justify-content: space-between;
@@ -1040,8 +1040,9 @@
             /* Settings toolbar: Form|JSON toggle + import/export */
             /* Toolbar + action bars share the form's max-width so their right edge
                lines up with the server cards (no overshoot to the viewport edge). */
-            #settings-toolbar, #settings-actions-bottom { max-width: 1080px; }
-            .settings-toolbar { display: flex; align-items: center; gap: 14px; margin: 2px 0 16px; flex-wrap: wrap; }
+            #settings-toolbar { max-width: 1080px; }
+            #settings-actions-bottom { max-width: 1080px; margin-top: 16px; }  /* gap above = inter-card gap */
+            .settings-toolbar { display: flex; align-items: center; gap: 10px; margin: 2px 0 0; flex-wrap: wrap; }
             .settings-toolbar .spacer { flex: 1; }
             /* Config path: small, pale, top-right in the header row. */
             .cfg-path { color: var(--text-muted); font-size: 0.72rem; opacity: 0.6; white-space: nowrap;
@@ -1056,7 +1057,7 @@
             .btn-primary.btn-sm { border: 1px solid transparent; }
             /* Action bar (Undo/Redo/Revert/Save). Top group lives in the toolbar
                (right of the spacer); the bottom duplicate is right-aligned. */
-            .settings-actions-bar { display: flex; align-items: center; gap: 12px; margin: 16px 0; flex-wrap: wrap; justify-content: flex-end; }
+            .settings-actions-bar { display: flex; align-items: center; gap: 10px; margin: 0; flex-wrap: wrap; justify-content: flex-end; }
             #settings-toolbar .btn[disabled], .settings-actions-bar .btn[disabled] { opacity: 0.4; cursor: default; }
             .act-msg { font-size: 0.85rem; margin-left: 6px; }
             /* Form: changed-field highlight (vs last saved) */

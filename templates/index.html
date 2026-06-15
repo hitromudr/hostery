@@ -1044,17 +1044,20 @@
             .seg-btn { background: transparent; color: var(--text-muted); border: none; padding: 6px 14px; cursor: pointer; font-size: 0.85rem; }
             .seg-btn.active { background: var(--accent-color); color: var(--on-fill); }
             /* JSON editor: transparent textarea over a highlighted <pre> overlay */
-            .json-edit-wrap { position: relative; border: 1px solid var(--border-color); border-radius: 8px; background: #1a1b26; }
+            .json-edit-wrap { position: relative; border: 1px solid var(--border-color); border-radius: 8px; background: #1a1b26; overflow: hidden; }
             .json-edit-wrap pre, .json-edit-wrap textarea {
                 margin: 0; padding: 12px 14px; border: 0;
                 font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
                 font-size: 0.82rem; line-height: 1.5; tab-size: 2;
-                white-space: pre; word-break: normal; overflow-wrap: normal;
+                white-space: pre-wrap; word-break: normal; overflow-wrap: anywhere;
             }
-            .json-edit-wrap pre { position: absolute; inset: 0; overflow: auto; pointer-events: none; color: var(--text-color); }
+            /* pre overlay is synced from JS; it never scrolls on its own */
+            .json-edit-wrap pre { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--text-color); }
+            /* textarea auto-grows to its content (set in JS), so there is no inner
+               scrollbar and nothing is cropped — the page scrolls instead. */
             .json-edit-wrap textarea {
-                position: relative; display: block; width: 100%; min-height: 60vh; resize: vertical;
-                background: transparent; color: transparent; caret-color: var(--text-color); overflow: auto; outline: none;
+                position: relative; display: block; width: 100%; min-height: 200px; resize: none;
+                background: transparent; color: transparent; caret-color: var(--text-color); overflow: hidden; outline: none;
             }
             .j-key { color: #7aa2f7; } .j-str { color: #9ece6a; } .j-num { color: #e0af68; }
             .j-bool { color: #bb9af7; } .j-null { color: #f7768e; }

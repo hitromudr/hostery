@@ -243,7 +243,7 @@ function buildJSONEditor(text) {
     <div class="json-edit-wrap">
       <pre id="settings-json-hl" aria-hidden="true"></pre>
       <textarea id="settings-json-input" spellcheck="false" autocomplete="off"
-                oninput="syncJSONHighlight()" onscroll="syncJSONHighlight()"></textarea>
+                oninput="syncJSONHighlight()"></textarea>
     </div>
     <div class="settings-json-actions">
       <button class="btn btn-primary" onclick="saveJSON()"><i class="fas fa-save"></i> Save</button>
@@ -273,8 +273,10 @@ function syncJSONHighlight() {
   if (!ta || !hl) return;
   // Trailing newline keeps the last line aligned with the textarea.
   hl.innerHTML = highlightJSON(ta.value) + "\n";
-  hl.scrollTop = ta.scrollTop;
-  hl.scrollLeft = ta.scrollLeft;
+  // Auto-grow to content: no inner scrollbar, nothing cropped — the page
+  // scrolls instead (one scrollbar, not three).
+  ta.style.height = "auto";
+  ta.style.height = ta.scrollHeight + "px";
   showJSONError("");
 }
 

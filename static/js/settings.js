@@ -70,14 +70,22 @@ async function settingsInit() {
 async function settingsReload() {
   const r = await fetch("/api/config");
   _cfg = await r.json();
-  _baseline = clone(_cfg);
-  _history = [pretty(_cfg)];
-  _histIndex = 0;
   try { _cfgPath = (await (await fetch("/api/config/path")).json()).path || ""; }
   catch (e) { _cfgPath = ""; }
   renderToolbar();
   renderActionBars();
   renderActiveView();
+  // Normalize the baseline to the form's canonical shape (services as objects,
+  // empty managed keys dropped, ports as ints) so the first edit is exactly one
+  // undo step — no spurious "normalization" diff layered on top of it.
+  if (_settingsMode === "form" && document.querySelector("#cfg-servers .card")) {
+    _cfg = collect();
+    renderSettings();
+  }
+  _baseline = clone(_cfg);
+  _history = [pretty(_cfg)];
+  _histIndex = 0;
+  updateActionBars();
 }
 
 // Re-render whichever view is active, from the current _cfg.
@@ -178,9 +186,10 @@ function renderToolbar() {
     <button class="btn btn-ghost btn-sm" title="Скачать конфиг файлом" onclick="exportConfig()"><i class="fas fa-upload"></i> Export</button>
     <button class="btn btn-ghost btn-sm" title="Загрузить конфиг из файла" onclick="document.getElementById('settings-import-file').click()"><i class="fas fa-download"></i> Import</button>
     ${treeBtn}
-    ${_cfgPath ? `<span class="cfg-path" title="Файл конфига на сервере"><i class="fas fa-file-code"></i> ${esc(_cfgPath)}</span>` : ""}
     <span class="spacer"></span>
     ${actionButtonsHTML()}`;
+  const hdr = document.getElementById("cfg-path-hdr");
+  if (hdr) hdr.textContent = _cfgPath || "";
   updateActionBars();
 }
 
@@ -549,13 +558,12 @@ function renderJSONHighlight() {
     const cls = "jl" + (d.type === "add" ? " jl-add" : "") + (d.delBefore ? " jl-delb" : "") + (d.delAfter ? " jl-dela" : "");
     return `<div class="${cls}">${highlightJSONLine(d.text) || "&nbsp;"}</div>`;
   }).join("");
-  // Grow both layers to content height; they live inside a fixed-height
-  // scrolling wrap, so growing never moves the page (no edit "jump"). The wrap
-  // scrolls both layers together, so no per-element scroll sync is needed.
+  // Size the textarea (in-flow) to its content; the fixed-height wrap scrolls
+  // it (no page "jump"). The <pre> overlay is absolutely positioned with its
+  // NATURAL content height, so it tracks the textarea line-for-line — forcing
+  // its height to the textarea's was the source of the misaligned highlight.
   ta.style.height = "auto";
-  const h = ta.scrollHeight;
-  ta.style.height = h + "px";
-  hl.style.height = h + "px";
+  ta.style.height = ta.scrollHeight + "px";
 }
 
 // JSON edited → if valid, adopt into _cfg + snapshot; always repaint diff.

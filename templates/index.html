@@ -1038,15 +1038,25 @@
             .cockpit-chip.bad { color: var(--danger-color); border-color: var(--danger-color); }
             .ssh-result { font-size: 0.82rem; color: var(--text-muted); }
             /* Settings toolbar: Form|JSON toggle + import/export */
-            .settings-toolbar { display: flex; align-items: center; gap: 10px; margin: 2px 0 16px; flex-wrap: wrap; }
+            /* Toolbar + action bars share the form's max-width so their right edge
+               lines up with the server cards (no overshoot to the viewport edge). */
+            #settings-toolbar, #settings-actions-bottom { max-width: 1080px; }
+            .settings-toolbar { display: flex; align-items: center; gap: 16px; margin: 2px 0 18px; flex-wrap: wrap; }
             .settings-toolbar .spacer { flex: 1; }
-            .settings-toolbar .cfg-path { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
-            .seg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
-            .seg-btn { background: transparent; color: var(--text-muted); border: none; padding: 6px 14px; cursor: pointer; font-size: 0.85rem; }
+            /* Config path: small, pale, top-right in the header row. */
+            .cfg-path { color: var(--text-muted); font-size: 0.72rem; opacity: 0.6; white-space: nowrap;
+                        overflow: hidden; text-overflow: ellipsis; max-width: 360px; margin-left: auto; }
+            #cfg-path-hdr { margin-right: 14px; }
+            /* Uniform control height so toolbar/action buttons line up cleanly. */
+            .settings-toolbar .btn, .settings-actions-bar .btn, .settings-toolbar .seg {
+                height: 34px; box-sizing: border-box; display: inline-flex; align-items: center; margin: 0;
+            }
+            .seg { border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+            .seg-btn { background: transparent; color: var(--text-muted); border: none; padding: 0 14px; cursor: pointer; font-size: 0.85rem; height: 100%; display: inline-flex; align-items: center; }
             .seg-btn.active { background: var(--accent-color); color: var(--on-fill); }
             /* Action bar (Undo/Redo/Revert/Save). Top group lives in the toolbar
                (right of the spacer); the bottom duplicate is right-aligned. */
-            .settings-actions-bar { display: flex; align-items: center; gap: 8px; margin: 10px 0; flex-wrap: wrap; justify-content: flex-end; }
+            .settings-actions-bar { display: flex; align-items: center; gap: 12px; margin: 14px 0; flex-wrap: wrap; justify-content: flex-end; }
             #settings-toolbar .btn[disabled], .settings-actions-bar .btn[disabled] { opacity: 0.4; cursor: default; }
             .act-msg { font-size: 0.85rem; margin-left: 6px; }
             /* Form: changed-field highlight (vs last saved) */
@@ -1357,12 +1367,12 @@
             <div id="view-settings" class="view-section">
                 <div class="header-row">
                     <h2>Settings</h2>
+                    <span id="cfg-path-hdr" class="cfg-path" title="Файл конфига на сервере"></span>
                     <button class="btn btn-ghost embed-only" onclick="showView('monitoring')" title="Back to Net View">
                         <i class="fas fa-arrow-left"></i> Net View
                     </button>
                 </div>
                 <div id="settings-toolbar"></div>
-                <div id="settings-actions-top"></div>
                 <div id="settings-root"></div>
                 <div id="settings-json" style="display:none"></div>
                 <div id="settings-actions-bottom"></div>

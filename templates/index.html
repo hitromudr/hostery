@@ -1041,22 +1041,22 @@
             /* Toolbar + action bars share the form's max-width so their right edge
                lines up with the server cards (no overshoot to the viewport edge). */
             #settings-toolbar, #settings-actions-bottom { max-width: 1080px; }
-            .settings-toolbar { display: flex; align-items: center; gap: 16px; margin: 2px 0 18px; flex-wrap: wrap; }
+            .settings-toolbar { display: flex; align-items: center; gap: 14px; margin: 2px 0 16px; flex-wrap: wrap; }
             .settings-toolbar .spacer { flex: 1; }
             /* Config path: small, pale, top-right in the header row. */
             .cfg-path { color: var(--text-muted); font-size: 0.72rem; opacity: 0.6; white-space: nowrap;
                         overflow: hidden; text-overflow: ellipsis; max-width: 360px; margin-left: auto; }
             #cfg-path-hdr { margin-right: 14px; }
-            /* Uniform control height so toolbar/action buttons line up cleanly. */
-            .settings-toolbar .btn, .settings-actions-bar .btn, .settings-toolbar .seg {
-                height: 34px; box-sizing: border-box; display: inline-flex; align-items: center; margin: 0;
-            }
-            .seg { border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
-            .seg-btn { background: transparent; color: var(--text-muted); border: none; padding: 0 14px; cursor: pointer; font-size: 0.85rem; height: 100%; display: inline-flex; align-items: center; }
+            .seg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+            .seg-btn { background: transparent; color: var(--text-muted); border: none; padding: 7px 14px; cursor: pointer; font-size: 0.82rem; }
             .seg-btn.active { background: var(--accent-color); color: var(--on-fill); }
+            /* Equal height: seg + ghost buttons carry a 1px border, so give the
+               primary (Save) a transparent one and align the vertical padding. */
+            .settings-toolbar .btn-sm, .settings-actions-bar .btn-sm { padding: 7px 12px; font-size: 0.82rem; }
+            .btn-primary.btn-sm { border: 1px solid transparent; }
             /* Action bar (Undo/Redo/Revert/Save). Top group lives in the toolbar
                (right of the spacer); the bottom duplicate is right-aligned. */
-            .settings-actions-bar { display: flex; align-items: center; gap: 12px; margin: 14px 0; flex-wrap: wrap; justify-content: flex-end; }
+            .settings-actions-bar { display: flex; align-items: center; gap: 12px; margin: 16px 0; flex-wrap: wrap; justify-content: flex-end; }
             #settings-toolbar .btn[disabled], .settings-actions-bar .btn[disabled] { opacity: 0.4; cursor: default; }
             .act-msg { font-size: 0.85rem; margin-left: 6px; }
             /* Form: changed-field highlight (vs last saved) */
@@ -1084,9 +1084,7 @@
                 pointer-events: none; color: var(--text-color);
             }
             .json-edit-wrap pre .jl { display: block; padding: 0 14px; margin: 0 -14px; }
-            .json-edit-wrap pre .jl-add { background: rgba(158, 206, 106, 0.16); }            /* added / changed */
-            .json-edit-wrap pre .jl-delb { box-shadow: inset 0 2px 0 0 var(--danger-color); }  /* removed above */
-            .json-edit-wrap pre .jl-dela { box-shadow: inset 0 -2px 0 0 var(--danger-color); } /* removed below */
+            .json-edit-wrap pre .jl-add { background: rgba(158, 206, 106, 0.16); }            /* added / changed line */
             .json-edit-wrap textarea {
                 position: relative; display: block; width: 100%; min-height: 100%; resize: none;
                 background: transparent; color: transparent; caret-color: var(--text-color);

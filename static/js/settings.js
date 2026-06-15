@@ -74,17 +74,17 @@ async function settingsReload() {
   catch (e) { _cfgPath = ""; }
   renderToolbar();
   renderActionBars();
-  renderActiveView();
-  // Normalize the baseline to the form's canonical shape (services as objects,
-  // empty managed keys dropped, ports as ints) so the first edit is exactly one
-  // undo step — no spurious "normalization" diff layered on top of it.
+  renderActiveView();   // initial render: gives the form DOM so collect() can run
+  // Normalize the loaded config to the form's canonical shape (services as
+  // objects, empty managed keys dropped, ports as ints) so the first edit is
+  // exactly one undo step — no spurious "normalization" diff on top of it.
   if (_settingsMode === "form" && document.querySelector("#cfg-servers .card")) {
     _cfg = collect();
-    renderSettings();
   }
-  _baseline = clone(_cfg);
+  _baseline = clone(_cfg);   // set baseline BEFORE the re-render so data-bl is correct
   _history = [pretty(_cfg)];
   _histIndex = 0;
+  renderActiveView();        // re-render with baseline set → no field falsely flagged "changed"
   updateActionBars();
 }
 

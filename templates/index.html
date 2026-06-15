@@ -1043,25 +1043,46 @@
             .seg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
             .seg-btn { background: transparent; color: var(--text-muted); border: none; padding: 6px 14px; cursor: pointer; font-size: 0.85rem; }
             .seg-btn.active { background: var(--accent-color); color: var(--on-fill); }
-            /* JSON editor: transparent textarea over a highlighted <pre> overlay */
-            .json-edit-wrap { position: relative; border: 1px solid var(--border-color); border-radius: 8px; background: #1a1b26; overflow: hidden; }
+            /* Action bar (Undo/Redo/Revert/Save) — duplicated top + bottom, both views */
+            .settings-actions-bar { display: flex; align-items: center; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+            .settings-actions-bar .btn[disabled] { opacity: 0.4; cursor: default; }
+            .act-msg { font-size: 0.85rem; margin-left: 6px; }
+            /* Form: changed-field highlight (vs last saved) */
+            #settings-root .field.changed input,
+            #settings-root .svc-row.changed input,
+            #settings-root .svc-row.changed select,
+            #settings-root .settings-card-head.changed input {
+                background: rgba(224, 175, 104, 0.14); border-color: var(--warning-color);
+            }
+            #settings-root .card-new { border-color: var(--success-color); }
+            /* JSON editor: fixed-height scrolling wrap (no page "jump" while typing);
+               highlighted <pre> behind a transparent <textarea>, both sized to content. */
+            .json-edit-wrap {
+                position: relative; height: 62vh; overflow: auto;
+                border: 1px solid var(--border-color); border-radius: 8px; background: #1a1b26;
+            }
             .json-edit-wrap pre, .json-edit-wrap textarea {
-                margin: 0; padding: 12px 14px; border: 0;
+                margin: 0; padding: 12px 14px; border: 0; box-sizing: border-box;
                 font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
                 font-size: 0.82rem; line-height: 1.5; tab-size: 2;
                 white-space: pre-wrap; word-break: normal; overflow-wrap: anywhere;
             }
-            /* pre overlay is synced from JS; it never scrolls on its own */
-            .json-edit-wrap pre { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--text-color); }
-            /* textarea auto-grows to its content (set in JS), so there is no inner
-               scrollbar and nothing is cropped — the page scrolls instead. */
+            .json-edit-wrap pre {
+                position: absolute; top: 0; left: 0; width: 100%; overflow: hidden;
+                pointer-events: none; color: var(--text-color);
+            }
+            .json-edit-wrap pre .jl { display: block; padding: 0 14px; margin: 0 -14px; }
+            .json-edit-wrap pre .jl-add { background: rgba(158, 206, 106, 0.16); }            /* added / changed */
+            .json-edit-wrap pre .jl-delb { box-shadow: inset 0 2px 0 0 var(--danger-color); }  /* removed above */
+            .json-edit-wrap pre .jl-dela { box-shadow: inset 0 -2px 0 0 var(--danger-color); } /* removed below */
             .json-edit-wrap textarea {
-                position: relative; display: block; width: 100%; min-height: 200px; resize: none;
-                background: transparent; color: transparent; caret-color: var(--text-color); overflow: hidden; outline: none;
+                position: relative; display: block; width: 100%; min-height: 100%; resize: none;
+                background: transparent; color: transparent; caret-color: var(--text-color);
+                overflow: hidden; outline: none;
             }
             .j-key { color: #7aa2f7; } .j-str { color: #9ece6a; } .j-num { color: #e0af68; }
             .j-bool { color: #bb9af7; } .j-null { color: #f7768e; }
-            .settings-json-actions { display: flex; gap: 10px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
+            .settings-json-foot { margin-top: 10px; }
             #settings-json-error { color: var(--danger-color); font-size: 0.85rem; min-height: 1.2em; white-space: pre-wrap; }
             .settings-actions { display: flex; gap: 10px; margin-top: 6px; }
             #cfg-msg { margin-top: 12px; font-size: 0.85rem; color: var(--text-muted); }
@@ -1325,8 +1346,10 @@
                     </button>
                 </div>
                 <div id="settings-toolbar"></div>
+                <div id="settings-actions-top"></div>
                 <div id="settings-root"></div>
                 <div id="settings-json" style="display:none"></div>
+                <div id="settings-actions-bottom"></div>
                 <input id="settings-import-file" type="file" accept="application/json,.json"
                        style="display:none" onchange="importConfig(event)">
             </div>

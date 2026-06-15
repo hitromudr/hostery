@@ -516,8 +516,15 @@ function renderJSONHighlight() {
   const hl = document.getElementById("settings-json-hl");
   if (!ta || !hl) return;
   const cur = ta.value.split("\n");
-  const base = (_baseline ? pretty(_baseline) : ta.value).split("\n");
-  const diff = lineDiff(cur, base);
+  // No real change vs the saved config → no diff marks (avoids spurious marks
+  // from key-order differences when the form rebuilds the config).
+  let diff;
+  if (isDirty()) {
+    const base = (_baseline ? pretty(_baseline) : ta.value).split("\n");
+    diff = lineDiff(cur, base);
+  } else {
+    diff = cur.map((t) => ({ text: t, type: "same" }));
+  }
   hl.innerHTML = diff.map((d) => {
     const cls = "jl" + (d.type === "add" ? " jl-add" : "") + (d.delBefore ? " jl-delb" : "") + (d.delAfter ? " jl-dela" : "");
     return `<div class="${cls}">${highlightJSONLine(d.text) || "&nbsp;"}</div>`;
@@ -529,19 +536,17 @@ function renderJSONHighlight() {
   const h = ta.scrollHeight;
   ta.style.height = h + "px";
   hl.style.height = h + "px";
-  showJSONError("");
 }
 
 // JSON edited → if valid, adopt into _cfg + snapshot; always repaint diff.
 function onJSONInput() {
   const ta = document.getElementById("settings-json-input");
   if (!ta) return;
+  let parsed, ok = true;
+  try { parsed = JSON.parse(ta.value); } catch (e) { ok = false; }
+  if (ok) { _cfg = parsed; pushHistoryDebounced(); showJSONError(""); }
+  else { showJSONError("Невалидный JSON — исправьте перед сохранением"); updateActionBars(); }
   renderJSONHighlight();
-  let cfg;
-  try { cfg = JSON.parse(ta.value); }
-  catch (e) { showJSONError("Невалидный JSON: " + e.message); updateActionBars(); return; }
-  _cfg = cfg;
-  pushHistoryDebounced();
 }
 
 function showJSONError(msg, ok) {

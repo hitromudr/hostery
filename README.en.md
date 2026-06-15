@@ -100,9 +100,12 @@ Configuration lives in `config/config.json`. The annotated example is at `config
 | `user` | SSH login user |
 | `key` | Path to private key (e.g. `~/.ssh/id_rsa`) |
 | `cockpit_url` | Optional Cockpit URL override; auto-detected if blank |
-| `socks` | Optional SOCKS5 proxy for SSH as `host:port` (e.g. an `ssh -D` / autossh tunnel). Use when the host is only reachable through a proxy |
+| `socks` | Optional SOCKS5 proxy for SSH as `host:port` (e.g. an `ssh -D` / autossh tunnel). Use when the host is only reachable through a proxy. Mutually exclusive with `jump` |
+| `jump` | Name of another server in `servers` to proxy the SSH connection through (ProxyJump). Use when the host is only reachable via a bastion/intermediate node. Mutually exclusive with `socks` |
+| `ssh_port` | SSH port (default `22`) |
 | `services` | List of service checks (see below) |
 | `custom_checks` | List of custom shell checks (see below) |
+| `muted` | List of service names hidden from status and alerts (managed by the mute button in the UI) |
 
 **Service check types:**
 

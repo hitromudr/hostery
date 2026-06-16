@@ -43,17 +43,17 @@ function isDirty() { return !!_baseline && canon(_cfg) !== canon(_baseline); }
 
 // Hover help for each settings entity.
 const TIPS = {
-  interval: "How often the whole fleet is polled, in seconds (default 300).",
-  tg_token: "Telegram bot token. Leave blank to keep the stored one. Both token and chat id are required for alerts.",
-  tg_chat: "Telegram chat id that receives alerts.",
-  host: "Hostname or IP of the server to monitor over SSH.",
-  user: "SSH login user. Cockpit install and some checks need root or passwordless sudo.",
-  key: "Path to the SSH private key (e.g. ~/.ssh/id_rsa). Blank falls back to the agent / default keys.",
-  cockpit: "Override the Cockpit URL. Blank auto-detects https://<host>:9090.",
-  svc_name: "Label shown for this check in Net View.",
-  svc_type: "Check kind: systemctl (unit active), port (TCP open), docker (container up), interface / wireguard (link UP), http (status code).",
-  svc_target: "Target for the chosen type — systemd unit, port number, container name, interface, or URL.",
-  socks: "Optional SOCKS5 proxy for the SSH connection, as host:port (e.g. an ssh -D / autossh tunnel). Use when the host is only reachable through a proxy.",
+  interval: "Как часто опрашивается весь парк серверов, в секундах (по умолчанию 300).",
+  tg_token: "Токен Telegram-бота. Оставьте пустым, чтобы сохранить текущий. Для оповещений нужны и токен, и chat id.",
+  tg_chat: "Telegram chat id, куда приходят оповещения.",
+  host: "Имя хоста или IP сервера для мониторинга по SSH.",
+  user: "SSH-пользователь. Для установки Cockpit и части проверок нужен root или passwordless sudo.",
+  key: "Путь к приватному SSH-ключу (например, ~/.ssh/id_rsa). Пусто — используются ключи агента / по умолчанию.",
+  cockpit: "Переопределить URL Cockpit. Пусто — автоопределение https://<host>:9090.",
+  svc_name: "Название этой проверки, отображаемое в Net View.",
+  svc_type: "Тип проверки: systemctl (юнит активен), port (TCP открыт), docker (контейнер запущен), interface / wireguard (линк UP), http (код ответа).",
+  svc_target: "Цель для выбранного типа — systemd-юнит, номер порта, имя контейнера, интерфейс или URL.",
+  socks: "Необязательный SOCKS5-прокси для SSH-подключения, в виде host:port (например, ssh -D / autossh-туннель). Нужен, когда хост доступен только через прокси.",
 };
 function help(key) {
   return `<i class="help fas fa-info-circle" tabindex="0" data-tip="${esc(TIPS[key] || "")}"></i>`;
@@ -145,13 +145,21 @@ function actionButtonsHTML() {
     <button class="btn btn-primary btn-sm act-save" title="Сохранить" onclick="saveSettings()"><i class="fas fa-save"></i> Save</button>`;
 }
 function renderActionBars() {
-  // The top action group lives in the toolbar row (renderToolbar); here we only
-  // render the bottom (right-aligned) duplicate.
-  const top = document.getElementById("settings-actions-top");
-  if (top) top.innerHTML = "";
+  // Single bottom row spanning the cards' width: Add server on the left, the
+  // [Undo][Redo][Revert][Save] group pushed to the right edge by a spacer.
+  // Add server is form-only — hidden in JSON view via syncBottomBarMode().
   const bot = document.getElementById("settings-actions-bottom");
-  if (bot) bot.innerHTML = `<div class="settings-actions-bar">${actionButtonsHTML()}<span class="act-msg"></span></div>`;
+  if (bot) bot.innerHTML = `<div class="settings-actions-bar">`
+    + `<button class="btn btn-ghost btn-sm act-addserver" onclick="addServer()"><i class="fas fa-plus"></i> Add server</button>`
+    + `<span class="spacer"></span>${actionButtonsHTML()}<span class="act-msg"></span></div>`;
+  syncBottomBarMode();
   updateActionBars();
+}
+// Add server lives in the bottom action row but only applies to the form view;
+// hide it while the JSON editor is showing.
+function syncBottomBarMode() {
+  const add = document.querySelector(".act-addserver");
+  if (add) add.style.display = _settingsMode === "form" ? "" : "none";
 }
 function updateActionBars() {
   const dirty = isDirty();
@@ -176,20 +184,21 @@ function renderToolbar() {
   if (!tb) return;
   // In JSON view, one toggle between editable text and the read-only fold tree.
   const treeBtn = _settingsMode === "json"
-    ? `<button class="btn btn-ghost btn-sm" id="json-tree-toggle" title="${_jsonTree ? 'Вернуться к редактированию текста' : 'Свернуть в дерево — только просмотр'}" onclick="toggleJSONTree()">${_jsonTree ? '<i class="fas fa-pen"></i> Редактирование' : '<i class="fas fa-eye"></i> Просмотр'}</button>`
+    ? `<button class="btn btn-ghost btn-sm" id="json-tree-toggle" title="${_jsonTree ? 'Вернуться к редактированию текста' : 'Свернуть в дерево — только просмотр'}" onclick="toggleJSONTree()">${_jsonTree ? '<i class="fas fa-pen"></i> Edit' : '<i class="fas fa-eye"></i> View'}</button>`
     : "";
   tb.innerHTML = `
     <div class="seg">
-      <button class="seg-btn ${_settingsMode === 'form' ? 'active' : ''}" onclick="setSettingsMode('form')"><i class="fas fa-table-list"></i> Форма</button>
+      <button class="seg-btn ${_settingsMode === 'form' ? 'active' : ''}" onclick="setSettingsMode('form')"><i class="fas fa-table-list"></i> Form</button>
       <button class="seg-btn ${_settingsMode === 'json' ? 'active' : ''}" onclick="setSettingsMode('json')"><i class="fas fa-code"></i> JSON</button>
     </div>
+    <span class="spacer"></span>
     <button class="btn btn-ghost btn-sm" title="Скачать конфиг файлом" onclick="exportConfig()"><i class="fas fa-upload"></i> Export</button>
     <button class="btn btn-ghost btn-sm" title="Загрузить конфиг из файла" onclick="document.getElementById('settings-import-file').click()"><i class="fas fa-download"></i> Import</button>
     ${treeBtn}
-    <span class="spacer"></span>
     ${actionButtonsHTML()}`;
   const hdr = document.getElementById("cfg-path-hdr");
   if (hdr) hdr.textContent = _cfgPath || "";
+  syncBottomBarMode();
   updateActionBars();
 }
 
@@ -210,10 +219,7 @@ function renderSettings() {
         <label class="field"><span>Telegram chat id${help("tg_chat")}</span><input id="cfg-tg-chat" data-bl="${esc(bTg.chat_id || "")}" value="${esc(tg.chat_id || "")}"></label>
       </div>
     </div>
-    <div id="cfg-servers">${Object.keys(servers).map(serverCardHTML).join("")}</div>
-    <div class="settings-actions">
-      <button class="btn btn-ghost" onclick="addServer()"><i class="fas fa-plus"></i> Add server</button>
-    </div>`;
+    <div id="cfg-servers">${Object.keys(servers).map(serverCardHTML).join("")}</div>`;
   if (!_formBound) {
     _formBound = true;
     root.addEventListener("input", onFormLiveEdit);   // live: update model + highlights, no history snapshot
@@ -471,10 +477,10 @@ function toggleJSONTree() {
     _jsonTree = false;
     renderJSONHighlight();
   }
-  renderToolbar();  // refresh the toggle button (Просмотр ↔ Редактирование)
+  renderToolbar();  // refresh the toggle button (View ↔ Edit)
 }
 
-// Collapsed-node state is keyed by path so it survives Просмотр↔Редактирование
+// Collapsed-node state is keyed by path so it survives View↔Edit
 // toggles and edits. _treeClosed holds the paths the user has collapsed.
 function onTreeToggle(el) {
   const p = el.dataset.tpath || "";

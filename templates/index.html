@@ -965,6 +965,7 @@
 
             /* --- Settings editor --- */
             #settings-root { max-width: 1080px; margin-top: 16px; }  /* gap below the toolbar = inter-card gap */
+            #settings-json { margin-top: 16px; }  /* same gap below the toolbar as the form */
             .settings-card { padding: 18px 20px; margin-bottom: 16px; }
             .settings-card-head {
                 display: flex; align-items: center; justify-content: space-between;
@@ -1041,11 +1042,20 @@
             /* Toolbar + action bars share the form's max-width so their right edge
                lines up with the server cards (no overshoot to the viewport edge). */
             #settings-toolbar { max-width: 1080px; }
-            #settings-actions-bottom { max-width: 1080px; margin-top: 16px; }  /* gap above = inter-card gap */
-            .settings-toolbar { display: flex; align-items: center; gap: 10px; margin: 2px 0 0; flex-wrap: wrap; }
-            .settings-toolbar .spacer { flex: 1; }
-            /* Config path: small, pale, top-right in the header row. */
-            .cfg-path { color: var(--text-muted); font-size: 0.72rem; opacity: 0.6; white-space: nowrap;
+            /* The last card already carries a 16px bottom margin; no extra top
+               margin here, so the gap above this bar equals the inter-card gap. */
+            #settings-actions-bottom { max-width: 1080px; }
+            /* Settings header shares the cards' max-width so the config path and
+               the Net View button line up with their right edge (no overshoot). */
+            #view-settings .header-row { max-width: 1080px; }
+            /* Spacing between toolbar / action-bar items comes from the flex gap
+               only; clear the legacy .btn-ghost right margin so buttons sit flush
+               with the cards' right edge and the gap matches the 16px vertical rhythm. */
+            .settings-toolbar { display: flex; align-items: center; gap: 16px; margin: 2px 0 0; flex-wrap: wrap; }
+            .settings-toolbar .btn, #view-settings .header-row .btn, .settings-actions-bar .btn { margin-right: 0; }
+            .settings-toolbar .spacer, .settings-actions-bar .spacer { flex: 1; }
+            /* Config path: small, top-right in the header row. */
+            .cfg-path { color: var(--text-muted); font-size: 0.72rem; opacity: 0.85; white-space: nowrap;
                         overflow: hidden; text-overflow: ellipsis; max-width: 360px; margin-left: auto; }
             #cfg-path-hdr { margin-right: 14px; }
             .seg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
@@ -1057,9 +1067,11 @@
             .btn-primary.btn-sm { border: 1px solid transparent; }
             /* Action bar (Undo/Redo/Revert/Save). Top group lives in the toolbar
                (right of the spacer); the bottom duplicate is right-aligned. */
-            .settings-actions-bar { display: flex; align-items: center; gap: 10px; margin: 0; flex-wrap: wrap; justify-content: flex-end; }
+            .settings-actions-bar { display: flex; align-items: center; gap: 16px; margin: 0; flex-wrap: wrap; }
             #settings-toolbar .btn[disabled], .settings-actions-bar .btn[disabled] { opacity: 0.4; cursor: default; }
-            .act-msg { font-size: 0.85rem; margin-left: 6px; }
+            /* Empty status span must not occupy trailing space (keeps Save flush). */
+            .act-msg { font-size: 0.85rem; }
+            .act-msg:empty { display: none; }
             /* Form: changed-field highlight (vs last saved) */
             #settings-root .field.changed input,
             #settings-root .svc-row.changed input,
@@ -1109,7 +1121,6 @@
             .json-tree .jt-leaf { white-space: pre-wrap; word-break: break-all; }
             .json-tree .jt-count { color: var(--text-muted); font-size: 0.72rem; margin-left: 5px; }
             .json-tree .jt-close { color: var(--text-color); }
-            .settings-actions { display: flex; gap: 10px; margin-top: 6px; }
             #cfg-msg { margin-top: 12px; font-size: 0.85rem; color: var(--text-muted); }
             .settings-foot {
                 display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -1371,7 +1382,7 @@
                         <i class="fas fa-arrow-left"></i> Net View
                     </button>
                 </div>
-                <div id="settings-toolbar"></div>
+                <div id="settings-toolbar" class="settings-toolbar"></div>
                 <div id="settings-root"></div>
                 <div id="settings-json" style="display:none"></div>
                 <div id="settings-actions-bottom"></div>

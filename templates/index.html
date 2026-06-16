@@ -503,6 +503,39 @@
                 overflow: visible;
                 position: relative;
             }
+            /* Hover help popup for the 30d uptime metric */
+            .mon-help {
+                position: relative;
+                cursor: help;
+                color: var(--text-muted);
+                font-size: 0.72rem;
+                font-weight: normal;
+            }
+            .mon-help .mon-help-pop {
+                display: none;
+                position: absolute;
+                right: 0;
+                top: 1.5em;
+                z-index: 60;
+                width: 260px;
+                padding: 8px 10px;
+                border-radius: 6px;
+                background: #24283b;
+                border: 1px solid var(--border-color);
+                color: var(--text-color);
+                font-size: 0.72rem;
+                font-weight: normal;
+                line-height: 1.4;
+                text-align: left;
+                white-space: normal;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+            }
+            .mon-help:hover .mon-help-pop,
+            .mon-help:focus .mon-help-pop {
+                display: block;
+            }
+            .mon-help-pop b { color: var(--text-color); }
+            .mon-help-pop .mh-dim { color: var(--text-muted); }
             .uptime-block {
                 flex: 1;
                 border-radius: 2px;
@@ -931,7 +964,7 @@
             .code-output.success { color: var(--success-color); }
 
             /* --- Settings editor --- */
-            #settings-root { max-width: 1080px; }
+            #settings-root { max-width: 1080px; margin-top: 16px; }  /* gap below the toolbar = inter-card gap */
             .settings-card { padding: 18px 20px; margin-bottom: 16px; }
             .settings-card-head {
                 display: flex; align-items: center; justify-content: space-between;
@@ -992,7 +1025,90 @@
             }
             .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
             .btn-icon { padding: 8px 11px; }
+            /* Cockpit slot in the Net View card header — compact so it fits the row */
+            .cockpit-ctl { display: inline-flex; align-items: center; }
+            .cockpit-ctl .btn { padding: 4px 9px; font-size: 0.72rem; font-weight: 600; }
+            .cockpit-ctl .btn-ghost { margin-right: 0; }
+            .cockpit-chip {
+                font-size: 0.7rem; color: var(--text-muted);
+                padding: 2px 8px; border-radius: 10px;
+                border: 1px solid var(--border-color); white-space: nowrap;
+            }
+            .cockpit-chip.warn { color: var(--warning-color); border-color: var(--warning-color); }
+            .cockpit-chip.bad { color: var(--danger-color); border-color: var(--danger-color); }
             .ssh-result { font-size: 0.82rem; color: var(--text-muted); }
+            /* Settings toolbar: Form|JSON toggle + import/export */
+            /* Toolbar + action bars share the form's max-width so their right edge
+               lines up with the server cards (no overshoot to the viewport edge). */
+            #settings-toolbar { max-width: 1080px; }
+            #settings-actions-bottom { max-width: 1080px; margin-top: 16px; }  /* gap above = inter-card gap */
+            .settings-toolbar { display: flex; align-items: center; gap: 10px; margin: 2px 0 0; flex-wrap: wrap; }
+            .settings-toolbar .spacer { flex: 1; }
+            /* Config path: small, pale, top-right in the header row. */
+            .cfg-path { color: var(--text-muted); font-size: 0.72rem; opacity: 0.6; white-space: nowrap;
+                        overflow: hidden; text-overflow: ellipsis; max-width: 360px; margin-left: auto; }
+            #cfg-path-hdr { margin-right: 14px; }
+            .seg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+            .seg-btn { background: transparent; color: var(--text-muted); border: none; padding: 7px 14px; cursor: pointer; font-size: 0.82rem; }
+            .seg-btn.active { background: var(--accent-color); color: var(--on-fill); }
+            /* Equal height: seg + ghost buttons carry a 1px border, so give the
+               primary (Save) a transparent one and align the vertical padding. */
+            .settings-toolbar .btn-sm, .settings-actions-bar .btn-sm { padding: 7px 12px; font-size: 0.82rem; }
+            .btn-primary.btn-sm { border: 1px solid transparent; }
+            /* Action bar (Undo/Redo/Revert/Save). Top group lives in the toolbar
+               (right of the spacer); the bottom duplicate is right-aligned. */
+            .settings-actions-bar { display: flex; align-items: center; gap: 10px; margin: 0; flex-wrap: wrap; justify-content: flex-end; }
+            #settings-toolbar .btn[disabled], .settings-actions-bar .btn[disabled] { opacity: 0.4; cursor: default; }
+            .act-msg { font-size: 0.85rem; margin-left: 6px; }
+            /* Form: changed-field highlight (vs last saved) */
+            #settings-root .field.changed input,
+            #settings-root .svc-row.changed input,
+            #settings-root .svc-row.changed select,
+            #settings-root .settings-card-head.changed input {
+                background: rgba(224, 175, 104, 0.14); border-color: var(--warning-color);
+            }
+            #settings-root .card-new { border-color: var(--success-color); }
+            /* JSON editor: fixed-height scrolling wrap (no page "jump" while typing);
+               highlighted <pre> behind a transparent <textarea>, both sized to content. */
+            .json-edit-wrap {
+                position: relative; height: 62vh; overflow: auto;
+                border: 1px solid var(--border-color); border-radius: 8px; background: #1a1b26;
+            }
+            .json-edit-wrap pre, .json-edit-wrap textarea {
+                margin: 0; padding: 12px 14px; border: 0; box-sizing: border-box;
+                font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+                font-size: 0.82rem; line-height: 1.5; tab-size: 2;
+                white-space: pre-wrap; word-break: normal; overflow-wrap: anywhere;
+            }
+            .json-edit-wrap pre {
+                position: absolute; top: 0; left: 0; width: 100%; overflow: hidden;
+                pointer-events: none; color: var(--text-color);
+            }
+            .json-edit-wrap pre .jl { display: block; padding: 0 14px; margin: 0 -14px; }
+            .json-edit-wrap pre .jl-add { background: rgba(158, 206, 106, 0.16); }            /* added / changed line */
+            .json-edit-wrap textarea {
+                position: relative; display: block; width: 100%; min-height: 100%; resize: none;
+                background: transparent; color: transparent; caret-color: var(--text-color);
+                overflow: hidden; outline: none;
+            }
+            .j-key { color: #7aa2f7; } .j-str { color: #9ece6a; } .j-num { color: #e0af68; }
+            .j-bool { color: #bb9af7; } .j-null { color: #f7768e; }
+            .settings-json-foot { margin-top: 10px; }
+            #settings-json-error { color: var(--danger-color); font-size: 0.85rem; min-height: 1.2em; white-space: pre-wrap; }
+            /* JSON read-only collapsible tree (folding via native <details>) */
+            .json-subbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+            .json-subbar-hint { color: var(--text-muted); font-size: 0.8rem; }
+            .json-tree {
+                font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+                font-size: 0.82rem; line-height: 1.5; color: var(--text-color);
+                border: 1px solid var(--border-color); border-radius: 8px; background: #1a1b26;
+                padding: 12px 14px; max-height: 62vh; overflow: auto;
+            }
+            .json-tree summary { cursor: pointer; outline: none; }
+            .json-tree .jt-body { padding-left: 1.4em; border-left: 1px solid rgba(255,255,255,0.07); margin-left: 3px; }
+            .json-tree .jt-leaf { white-space: pre-wrap; word-break: break-all; }
+            .json-tree .jt-count { color: var(--text-muted); font-size: 0.72rem; margin-left: 5px; }
+            .json-tree .jt-close { color: var(--text-color); }
             .settings-actions { display: flex; gap: 10px; margin-top: 6px; }
             #cfg-msg { margin-top: 12px; font-size: 0.85rem; color: var(--text-muted); }
             .settings-foot {
@@ -1250,11 +1366,17 @@
             <div id="view-settings" class="view-section">
                 <div class="header-row">
                     <h2>Settings</h2>
+                    <span id="cfg-path-hdr" class="cfg-path" title="Файл конфига на сервере"></span>
                     <button class="btn btn-ghost embed-only" onclick="showView('monitoring')" title="Back to Net View">
                         <i class="fas fa-arrow-left"></i> Net View
                     </button>
                 </div>
+                <div id="settings-toolbar"></div>
                 <div id="settings-root"></div>
+                <div id="settings-json" style="display:none"></div>
+                <div id="settings-actions-bottom"></div>
+                <input id="settings-import-file" type="file" accept="application/json,.json"
+                       style="display:none" onchange="importConfig(event)">
             </div>
 
         </div>

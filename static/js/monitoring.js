@@ -4,6 +4,7 @@ let monCountdownInterval = null;
 let monStatusData = null;
 let monMutedData = {};
 const _cockpitSeen = new Set();
+const _cockpitCache = {}; // server -> resolved slot HTML; survives card re-render
 
 // --- Drag-to-reorder state + order persistence ---
 const MON_ORDER_KEY = "hostery_server_order";
@@ -288,8 +289,13 @@ function renderMonServers(data) {
               <div class="server-ip">${s.host || ""}</div>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
-              <div id="cockpit-${name}" class="cockpit-ctl"></div>
-              <span style="font-size: 0.85rem; font-weight: bold; color: ${uptimeColor};" title="${s.uptime_ok || 0}/${checks} checks OK">${s.uptime_30d}%</span>
+              <div id="cockpit-${name}" class="cockpit-ctl">${_cockpitCache[name] || ""}</div>
+              <span style="font-size: 0.85rem; font-weight: bold; color: ${uptimeColor};">${s.uptime_30d}%</span>
+              <span class="mon-help" tabindex="0"><i class="fa-solid fa-circle-info"></i><span class="mon-help-pop">
+                <b>${s.uptime_30d}% — аптайм за 30 дней</b><br>
+                Доля успешных проверок <b>по всем сервисам</b> ноды (ok из ok+fail; <span class="mh-dim">warnings не учитываются</span>). Сейчас ${s.uptime_ok || 0}/${checks}.<br>
+                <span class="mh-dim">Полоса ниже — последние 24 часа по всем сервисам; точка справа — состояние прямо сейчас.</span>
+              </span></span>
               <div class="server-indicator ${indicator}"></div>
             </div>
           </div>
@@ -963,38 +969,44 @@ async function monCheckNow(btn) {
   }
 }
 
-async function loadCockpit(server) {
+// Write the cockpit slot into the cache AND the live DOM. buildCard renders the
+// cached HTML on every re-render, so the button no longer vanishes on the next
+// status poll (the bug was: card.innerHTML rebuild wiped an async-only slot).
+function _setCockpit(server, html) {
+  _cockpitCache[server] = html;
   const el = document.getElementById("cockpit-" + server);
-  if (!el) return;
+  if (el) el.innerHTML = html;
+}
+
+async function loadCockpit(server) {
+  let html = "";
   try {
     const r = await fetch(`/api/server/${encodeURIComponent(server)}/cockpit-status`);
     const d = await r.json();
     if (d.status === "running") {
-      el.innerHTML = `<a class="btn btn-ghost" href="${d.url}" target="_blank" rel="noopener">
-        <i class="fas fa-up-right-from-square"></i> System console</a>`;
+      html = `<a class="btn btn-ghost" href="${d.url}" target="_blank" rel="noopener"><i class="fas fa-up-right-from-square"></i> System console</a>`;
     } else if (d.status === "installed-but-stopped") {
-      el.innerHTML = `<span class="cockpit-chip warn">Cockpit installed (stopped)</span>`;
+      html = `<span class="cockpit-chip warn">Cockpit installed (stopped)</span>`;
     } else if (d.status === "absent") {
-      el.innerHTML = `<button class="btn btn-primary" onclick="installCockpit('${server}')">
-        <i class="fas fa-download"></i> Install Cockpit</button>`;
+      html = `<button class="btn btn-primary" onclick="installCockpit('${server}')"><i class="fas fa-download"></i> Install Cockpit</button>`;
     } else {
-      el.innerHTML = `<span class="cockpit-chip">Cockpit: ${d.status}</span>`;
+      html = `<span class="cockpit-chip">Cockpit: ${d.status}</span>`;
     }
-  } catch (e) { el.innerHTML = ""; }
+  } catch (e) { html = ""; }
+  _setCockpit(server, html);
 }
 
 async function installCockpit(server) {
   if (!confirm(`Install Red Hat Cockpit on "${server}"? This installs packages over SSH `
     + `(needs root / passwordless sudo) and enables cockpit.socket on port 9090.`)) return;
-  const el = document.getElementById("cockpit-" + server);
-  el.innerHTML = `<span class="cockpit-chip">installing…</span>`;
+  _setCockpit(server, `<span class="cockpit-chip">installing…</span>`);
   await fetch(`/api/server/${encodeURIComponent(server)}/install-cockpit`, { method: "POST" });
   const poll = setInterval(async () => {
     const r = await fetch(`/api/server/${encodeURIComponent(server)}/install-cockpit/log`);
     const d = await r.json();
     const last = (d.log || []).join("\n");
     if (last.includes("DONE")) { clearInterval(poll); loadCockpit(server); }
-    else if (last.includes("ERROR")) { clearInterval(poll); el.innerHTML =
-      `<span class="cockpit-chip bad" title="${last.replace(/"/g, "'")}">install failed</span>`; }
+    else if (last.includes("ERROR")) { clearInterval(poll);
+      _setCockpit(server, `<span class="cockpit-chip bad" title="${last.replace(/"/g, "'")}">install failed</span>`); }
   }, 2000);
 }

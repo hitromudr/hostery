@@ -803,14 +803,17 @@ def monitoring_status():
             intervals_by_service, server_check_ts, now_utc, hours=24
         )
 
-        # 30d SSH uptime — two cheap COUNT() aggregates, kept as-is.
+        # 30d uptime across ALL services — two cheap COUNT() aggregates.
+        # Warnings are excluded from both numerator and denominator (only
+        # ok/fail count), so transient degradations (packet-loss, tx-drops)
+        # don't penalise the score — only hard service failures do.
         total = conn.execute(
-            "SELECT COUNT(*) as cnt FROM checks WHERE server=? AND service='ssh' "
+            "SELECT COUNT(*) as cnt FROM checks WHERE server=? "
             "AND status IN ('ok','fail') AND timestamp > ?",
             (server_name, month_cutoff),
         ).fetchone()["cnt"]
         ok_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM checks WHERE server=? AND service='ssh' "
+            "SELECT COUNT(*) as cnt FROM checks WHERE server=? "
             "AND status='ok' AND timestamp > ?",
             (server_name, month_cutoff),
         ).fetchone()["cnt"]

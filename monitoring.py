@@ -184,7 +184,11 @@ def _get_ssh_client(server_name, server_cfg, config):
         transport = jump_client.get_transport()
         dest = (server_cfg["host"], 22)
         local = ("127.0.0.1", 0)
-        sock = transport.open_channel("direct-tcpip", dest, local)
+        # Bound the channel open: without a timeout the jump host's kernel
+        # keeps retrying the SYN to dest:22 for ~140s on a transient leg loss
+        # (e.g. POLKA->EMMET), blocking the worker the whole time before
+        # raising ChannelException. Fail fast instead.
+        sock = transport.open_channel("direct-tcpip", dest, local, timeout=timeout)
         # Store jump_client on the main client so we can close it later
         client._jump_client = jump_client
 
@@ -255,13 +259,27 @@ def check_server(server_name, server_cfg, config):
     results = []
     start = time.time()
 
-    try:
-        client = _get_ssh_client(server_name, server_cfg, config)
-    except Exception as e:
+    # Connect with a short retry. A single transient SYN drop on a jump leg
+    # (e.g. POLKA->EMMET:22) makes the channel open fail while the data plane
+    # stays up; one quick retry collapses that single-sample noise. A genuine
+    # multi-minute outage still fails every attempt and is reported as down.
+    retries = config.get("ssh_retries", 1)
+    retry_delay = config.get("ssh_retry_delay", 3)
+    client = None
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            client = _get_ssh_client(server_name, server_cfg, config)
+            break
+        except Exception as e:
+            last_err = e
+            if attempt < retries:
+                time.sleep(retry_delay)
+    if client is None:
         elapsed = int((time.time() - start) * 1000)
-        logger.warning(f"SSH connect failed for {server_name}: {e}")
+        logger.warning(f"SSH connect failed for {server_name}: {last_err}")
         # SSH itself is down — services are unknown (can't check)
-        results.append(("ssh", "fail", str(e), elapsed))
+        results.append(("ssh", "fail", str(last_err), elapsed))
         # Resolve each entry to its service NAME — entries may be dicts in the
         # config-driven model, and a dict can't be stored as a service key.
         for entry in server_cfg.get("services", []):

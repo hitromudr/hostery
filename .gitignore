@@ -11,6 +11,9 @@ config/config.json
 # Local Claude Code guidance / specs (not part of the public project)
 CLAUDE.md
 docs/superpowers/
+# AGENTS.md is a symlink to the ignored CLAUDE.md — committing it would put a
+# dangling link in every fresh clone.
+AGENTS.md
 
 # Локальные переменные окружения деплоя
 .env

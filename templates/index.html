@@ -1171,6 +1171,23 @@
             @media (max-width: 720px) {
                 .svc-row { grid-template-columns: 1fr 1fr; }
                 .svc-cols { display: none; }
+
+                /* The header was one unbreakable line — title left, controls
+                   right — so on a phone the controls ran past the right edge and
+                   "Check Now" was cut in half. Nothing in it needs to share a
+                   line with the title, so let both levels wrap. Seen in the
+                   cockpit's iframe, which is where Net View is read on a phone:
+                   the frame is the viewport, ~390px wide. */
+                .header-row {
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    margin-bottom: 16px;
+                }
+                .header-row > div { flex-wrap: wrap; }
+                h2 { font-size: 1.2rem; }
+                /* 30px on each side of a 390px frame is a tenth of the width
+                   spent twice over. */
+                .view-section { padding: 16px; }
             }
         </style>
     </head>

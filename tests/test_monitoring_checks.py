@@ -73,3 +73,58 @@ def test_check_server_connect_exhausts_retries(monkeypatch):
     results = m.check_server("EMMET", {"host": "x", "user": "y", "services": []}, cfg)
     assert calls["n"] == 3  # 1 initial + 2 retries
     assert results[0][0] == "ssh" and results[0][1] == "fail"
+
+def test_ssh_port_is_used_for_a_direct_connection(monkeypatch):
+    """`ssh_port` в конфигурации обязан доезжать до paramiko.
+
+    Он и раньше был в схеме, но учитывался только в ветке SOCKS. Прямое
+    соединение всегда шло на 22 — то есть узел за loopback-форвардом
+    (запасной ноутбук: 127.0.0.1:2203) проверялся бы на порту самой малины,
+    и проверка отвечала бы о другой машине, оставаясь зелёной.
+    """
+    captured = {}
+
+    class FakeTransport:
+        def set_keepalive(self, _):
+            pass
+
+    class FakeClient:
+        def set_missing_host_key_policy(self, _):
+            pass
+
+        def connect(self, **kwargs):
+            captured.update(kwargs)
+
+        def get_transport(self):
+            return FakeTransport()
+
+    monkeypatch.setattr(m.paramiko, "SSHClient", FakeClient)
+    m._get_ssh_client(
+        "MICROPC",
+        {"host": "127.0.0.1", "ssh_port": 2203, "user": "dms"},
+        {"ssh_timeout": 7},
+    )
+    assert captured["port"] == 2203
+    assert captured["hostname"] == "127.0.0.1"
+
+
+def test_ssh_port_defaults_to_22(monkeypatch):
+    captured = {}
+
+    class FakeTransport:
+        def set_keepalive(self, _):
+            pass
+
+    class FakeClient:
+        def set_missing_host_key_policy(self, _):
+            pass
+
+        def connect(self, **kwargs):
+            captured.update(kwargs)
+
+        def get_transport(self):
+            return FakeTransport()
+
+    monkeypatch.setattr(m.paramiko, "SSHClient", FakeClient)
+    m._get_ssh_client("HITRO", {"host": "203.0.113.7", "user": "root"}, {})
+    assert captured["port"] == 22

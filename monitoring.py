@@ -182,7 +182,7 @@ def _get_ssh_client(server_name, server_cfg, config):
             timeout=timeout,
         )
         transport = jump_client.get_transport()
-        dest = (server_cfg["host"], 22)
+        dest = (server_cfg["host"], int(server_cfg.get("ssh_port", 22)))
         local = ("127.0.0.1", 0)
         # Bound the channel open: without a timeout the jump host's kernel
         # keeps retrying the SYN to dest:22 for ~140s on a transient leg loss
@@ -209,8 +209,15 @@ def _get_ssh_client(server_name, server_cfg, config):
         s.connect((server_cfg["host"], int(server_cfg.get("ssh_port", 22))))
         sock = s
 
+    # Порт берётся из конфигурации, а не подразумевается 22. Он и раньше был
+    # в схеме (`ssh_port`), но учитывался только в ветке SOCKS: прямое
+    # соединение молча шло на 22, то есть узел, доступный через loopback-форвард
+    # на другом порту, проверялся бы не тот. Так выглядит запасной ноутбук с
+    # малины — его sshd приходит на 127.0.0.1:2203, а на :22 отвечает сама
+    # малина: проверка была бы зелёной, отвечая о другой машине.
     connect_kwargs = {
         "hostname": server_cfg["host"],
+        "port": int(server_cfg.get("ssh_port", 22)),
         "username": server_cfg["user"],
         "timeout": timeout,
     }

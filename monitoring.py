@@ -440,6 +440,22 @@ def update_incidents(conn, server, service, status, timestamp, error=None):
 # --- Telegram ---
 
 
+def alerts_enabled(config, server_name):
+    """Звонить ли о смене состояния этого узла.
+
+    Рабочая станция выключается по воле владельца, и для неё «ssh не отвечает» —
+    штатное состояние, а не событие. Инцидент при этом писать надо: Net View
+    показывает историю, и по ней видно, когда машина была на связи. Звонок —
+    нет: он превращает каждое выключение в тревогу, и через неделю на тревоги
+    перестают смотреть вообще.
+
+    Существующий `muted` эту задачу не решает: он гасит службу, а недоступность
+    машины проявляется во всех её проверках сразу, начиная с `ssh`.
+    """
+    server = (config.get("servers") or {}).get(server_name) or {}
+    return bool(server.get("alerts", True))
+
+
 def send_telegram(config, message):
     """Send a Telegram notification."""
     token = config.get("telegram", {}).get("bot_token", "")
@@ -518,14 +534,15 @@ def run_check_cycle():
 
             # Update incidents and send alerts
             change = update_incidents(conn, server_name, service, status, timestamp, error)
-            if change == "opened":
+            notify = alerts_enabled(config, server_name)
+            if change == "opened" and notify:
                 msg = (
                     f"\U0001f534 <b>{server_name}</b>: {service} <b>DOWN</b>\n"
                     f"Error: {error or 'unknown'}\n"
                     f"Time: {timestamp[:19]}"
                 )
                 send_telegram(config, msg)
-            elif change == "resolved":
+            elif change == "resolved" and notify:
                 # Get incident for downtime calculation
                 incident = conn.execute(
                     "SELECT started_at FROM incidents WHERE server=? AND service=? AND resolved_at=? ORDER BY id DESC LIMIT 1",

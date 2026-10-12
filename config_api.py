@@ -75,6 +75,7 @@ def install_cockpit_command(pkg_manager):
 
 import json
 import threading
+import time
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -83,6 +84,17 @@ import monitoring
 config_bp = Blueprint("config", __name__)
 
 _install_logs = {}  # server_name -> list[str], streamed install output
+
+# Whether Cockpit is installed on a server changes by hand, rarely — yet every
+# opening of Net View asked every server over a fresh SSH session, 7–18 s per
+# tile on the Pi (2026-10-12). A definite answer is kept for an hour; an SSH
+# failure is not kept, and an install forgets the server's entry.
+COCKPIT_STATUS_TTL = 3600
+_cockpit_cache = {}  # server_name -> (monotonic time, status)
+
+
+def _now():
+    return time.monotonic()
 
 
 @config_bp.route("/api/config")
@@ -145,12 +157,16 @@ def cockpit_status(name):
     srv = cfg.get("servers", {}).get(name)
     if not srv:
         return jsonify({"error": "not found"}), 404
+    url = srv.get("cockpit_url") or f"https://{srv['host']}:9090"
+    cached = _cockpit_cache.get(name)
+    if cached and _now() - cached[0] < COCKPIT_STATUS_TTL:
+        return jsonify({"status": cached[1], "url": url})
     try:
         client = monitoring._get_ssh_client(name, srv, cfg)
         out = monitoring._ssh_exec(client, cockpit_status_command())
         monitoring._close_ssh_client(client)
         status = parse_cockpit_status(out)
-        url = srv.get("cockpit_url") or f"https://{srv['host']}:9090"
+        _cockpit_cache[name] = (_now(), status)
         return jsonify({"status": status, "url": url})
     except Exception as e:
         return jsonify({"status": "unknown", "error": str(e)}), 200
@@ -182,6 +198,7 @@ def install_cockpit(name):
     srv = cfg.get("servers", {}).get(name)
     if not srv:
         return jsonify({"error": "not found"}), 404
+    _cockpit_cache.pop(name, None)
     threading.Thread(target=_run_install, args=(name, srv, cfg), daemon=True).start()
     return jsonify({"status": "started"})
 

@@ -19,6 +19,9 @@ def validate_config(cfg):
             errors.append(f"{name}: missing host")
         if not srv.get("user"):
             errors.append(f"{name}: missing user")
+        # A string "false" would be truthy and silently grey out real outages.
+        if "switched_off_ok" in srv and not isinstance(srv["switched_off_ok"], bool):
+            errors.append(f"{name}: switched_off_ok must be true or false")
         for entry in srv.get("services", []):
             if isinstance(entry, str):
                 continue

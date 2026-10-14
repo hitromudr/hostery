@@ -1,3 +1,4 @@
+import errno
 import json
 import logging
 import os
@@ -11,6 +12,11 @@ from pathlib import Path
 import paramiko
 import requests
 from flask import Blueprint, jsonify, request
+
+try:
+    import socks  # PySocks; only needed for servers reached through `socks`
+except ImportError:  # pragma: no cover - pysocks is in requirements.txt
+    socks = None
 
 logger = logging.getLogger(__name__)
 
@@ -175,12 +181,17 @@ def _get_ssh_client(server_name, server_cfg, config):
 
         jump_client = paramiko.SSHClient()
         jump_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        jump_client.connect(
-            hostname=jump_cfg["host"],
-            username=jump_cfg["user"],
-            key_filename=jump_key,
-            timeout=timeout,
-        )
+        try:
+            jump_client.connect(
+                hostname=jump_cfg["host"],
+                username=jump_cfg["user"],
+                key_filename=jump_key,
+                timeout=timeout,
+            )
+        except Exception as e:
+            # Tagged so that a dead jump host is never read as "the target
+            # node is switched off" (see node_did_not_answer).
+            raise JumpHostError(f"jump host {jump_name}: {e}") from e
         transport = jump_client.get_transport()
         dest = (server_cfg["host"], int(server_cfg.get("ssh_port", 22)))
         local = ("127.0.0.1", 0)
@@ -261,6 +272,67 @@ def _ssh_exec(client, cmd, timeout=8):
         raise
 
 
+# --- Switched-off nodes ---
+#
+# A workstation the owner powers down at will is not an outage when it stops
+# answering. A server entry with `"switched_off_ok": true` records such a
+# failure as status "off": neutral grey in the UI, no incident, no alert. Only
+# a failure that means "nothing answered at the node" counts; a node that
+# answers but rejects the key, or whose services fail, is reported as usual.
+
+
+class JumpHostError(Exception):
+    """The jump host itself could not be reached — says nothing about the target."""
+
+
+# errno values meaning "nothing is listening / no route to the node".
+_UNREACHABLE_ERRNOS = {
+    errno.ECONNREFUSED, errno.ECONNRESET, errno.ETIMEDOUT,
+    errno.EHOSTUNREACH, errno.ENETUNREACH, errno.EHOSTDOWN,
+}
+# SOCKS5 replies where the proxy worked but the destination did not answer:
+# network unreachable, host unreachable, connection refused, TTL expired.
+_SOCKS5_UNREACHABLE = ("0x03", "0x04", "0x05", "0x06")
+
+
+def switched_off_ok(server_cfg):
+    """Whether an unreachable node is an expected state rather than an outage."""
+    return bool((server_cfg or {}).get("switched_off_ok", False))
+
+
+def node_did_not_answer(exc):
+    """True when an SSH connect failure means the node itself did not answer.
+
+    Covers connect timeouts, refused / reset connections, no route, a loopback
+    forward that accepts and immediately closes (banner read fails), a jump
+    host or SOCKS proxy reporting the destination unreachable. Excludes
+    failures of the path (jump host or SOCKS proxy down) and anything after
+    the node answered (authentication, host key, missing key file).
+    """
+    if isinstance(exc, JumpHostError):
+        return False
+    if socks is not None and isinstance(exc, socks.ProxyError):
+        if isinstance(exc, socks.ProxyConnectionError):
+            return False  # the proxy itself is down
+        if isinstance(exc, socks.SOCKS5Error):
+            return str(exc)[:4] in _SOCKS5_UNREACHABLE
+        return exc.socket_err is not None and node_did_not_answer(exc.socket_err)
+    if isinstance(exc, paramiko.ChannelException):
+        # direct-tcpip through a jump host: code 2 = connect failed.
+        return exc.code == paramiko.common.OPEN_FAILED_CONNECT_FAILED
+    if isinstance(exc, paramiko.SSHException):
+        msg = str(exc)
+        return (msg.startswith("Error reading SSH protocol banner")
+                or msg.startswith("Timeout opening channel"))
+    if isinstance(exc, (TimeoutError, EOFError, ConnectionRefusedError, ConnectionResetError)):
+        return True
+    if isinstance(exc, paramiko.ssh_exception.NoValidConnectionsError):
+        return True
+    if isinstance(exc, OSError):
+        return exc.errno in _UNREACHABLE_ERRNOS
+    return False
+
+
 def check_server(server_name, server_cfg, config):
     """Run all checks for a single server. Returns list of (service, status, error)."""
     results = []
@@ -284,6 +356,17 @@ def check_server(server_name, server_cfg, config):
                 time.sleep(retry_delay)
     if client is None:
         elapsed = int((time.time() - start) * 1000)
+        if switched_off_ok(server_cfg) and node_did_not_answer(last_err):
+            # Expected state, not an outage: every check of the node is
+            # recorded as "off" so open incidents close and nothing alerts.
+            logger.info(f"{server_name} is switched off: {last_err}")
+            results.append(("ssh", "off", str(last_err), elapsed))
+            for entry in server_cfg.get("services", []):
+                svc, _ = resolve_service(entry)
+                results.append((svc, "off", None, 0))
+            for check in server_cfg.get("custom_checks", []):
+                results.append((check.get("name", "custom"), "off", None, 0))
+            return results
         logger.warning(f"SSH connect failed for {server_name}: {last_err}")
         # SSH itself is down — services are unknown (can't check)
         results.append(("ssh", "fail", str(last_err), elapsed))
@@ -394,7 +477,13 @@ def check_server(server_name, server_cfg, config):
 
 
 def update_incidents(conn, server, service, status, timestamp, error=None):
-    """Track incidents: open on fail, close on recovery. Inactive is not an incident."""
+    """Track incidents: open on fail, close on recovery. Inactive is not an incident.
+
+    "off" (node switched off, see switched_off_ok) never opens an incident and
+    closes an open one, returning "switched_off" rather than "resolved" so the
+    caller sends no "recovered" alert: the node did not recover, it went away
+    as expected.
+    """
     # Check for open incident
     row = conn.execute(
         "SELECT id, suppressed_until FROM incidents WHERE server=? AND service=? AND resolved_at IS NULL",
@@ -427,6 +516,12 @@ def update_incidents(conn, server, service, status, timestamp, error=None):
             (error, row["id"]),
         )
         return None
+    elif status == "off" and row:
+        conn.execute(
+            "UPDATE incidents SET resolved_at=? WHERE id=?",
+            (timestamp, row["id"]),
+        )
+        return "switched_off"
     elif status in ("ok", "inactive", "warning") and row:
         # Resolve incident (service recovered or went inactive)
         conn.execute(
@@ -683,22 +778,40 @@ def _bucket_intervals(intervals, hour_start, hour_end):
     return bad
 
 
-def _hourly_timeline(intervals_by_service, check_timestamps, now_utc, hours=24):
+def _split_check_timestamps(rows):
+    """Split check rows into (real, off) timestamp lists for _hourly_timeline."""
+    real, off = [], []
+    for r in rows:
+        (off if r["status"] == "off" else real).append(datetime.fromisoformat(r["timestamp"]))
+    return real, off
+
+
+def _hourly_timeline(intervals_by_service, check_timestamps, now_utc, hours=24,
+                     off_timestamps=()):
     """Build N hourly buckets from per-service intervals.
 
     intervals_by_service: dict {service: [interval, ...]} (output of
       _build_intervals per service). For server-wide timeline pass every
       service; for per-service timeline pass a single-entry dict.
     check_timestamps: list of datetime — used only to decide "empty" buckets
-      (no checks happened that hour).
+      (no checks happened that hour). Excludes "off" checks.
+    off_timestamps: list of datetime of "off" checks (node switched off, see
+      switched_off_ok). An hour with only these and no incident run is
+      "off" — a neutral state, not an outage. In a mixed hour the real
+      checks decide, so "off" never makes an hour look better or worse.
     """
-    # Pre-bucket check timestamps by hour-offset so we can mark empty hours.
-    has_check = [False] * hours
-    for ts in check_timestamps:
-        delta_hours = (now_utc - ts).total_seconds() / 3600.0
-        if 0 <= delta_hours < hours:
-            idx_from_end = int(delta_hours)
-            has_check[hours - 1 - idx_from_end] = True
+    def mark(timestamps):
+        # Pre-bucket timestamps by hour-offset.
+        flags = [False] * hours
+        for ts in timestamps:
+            delta_hours = (now_utc - ts).total_seconds() / 3600.0
+            if 0 <= delta_hours < hours:
+                idx_from_end = int(delta_hours)
+                flags[hours - 1 - idx_from_end] = True
+        return flags
+
+    has_check = mark(check_timestamps)
+    has_off = mark(off_timestamps)
 
     timeline = []
     for h in range(hours - 1, -1, -1):
@@ -733,7 +846,7 @@ def _hourly_timeline(intervals_by_service, check_timestamps, now_utc, hours=24):
         if not has_check[idx] and not incident_runs:
             timeline.append({
                 "hour": hour_start.isoformat(),
-                "status": "empty",
+                "status": "off" if has_off[idx] else "empty",
                 "severity": 0.0,
                 "incidents": 0,
                 "bad_seconds": 0,
@@ -827,9 +940,10 @@ def monitoring_status():
             # exactly one metric — no divergence between them.
             intervals = _build_intervals(svc_rows, now_utc)
             intervals_by_service[svc] = intervals
-            svc_check_ts = [datetime.fromisoformat(r["timestamp"]) for r in svc_rows]
+            svc_check_ts, svc_off_ts = _split_check_timestamps(svc_rows)
             svc_timeline = _hourly_timeline(
-                {svc: intervals}, svc_check_ts, now_utc, hours=24
+                {svc: intervals}, svc_check_ts, now_utc, hours=24,
+                off_timestamps=svc_off_ts,
             )
             bad_seconds_24h = sum(b["bad_seconds"] for b in svc_timeline)
             severity_24h = sum(b["severity"] for b in svc_timeline) / len(svc_timeline)
@@ -840,15 +954,17 @@ def monitoring_status():
 
         # Server-wide 24h uptime bar: same machinery, but with intervals from
         # every service in the dict — bad seconds from any service count once.
-        server_check_ts = [datetime.fromisoformat(r["timestamp"]) for r in rows_24h]
+        server_check_ts, server_off_ts = _split_check_timestamps(rows_24h)
         uptime_timeline = _hourly_timeline(
-            intervals_by_service, server_check_ts, now_utc, hours=24
+            intervals_by_service, server_check_ts, now_utc, hours=24,
+            off_timestamps=server_off_ts,
         )
 
         # 30d uptime across ALL services — two cheap COUNT() aggregates.
         # Warnings are excluded from both numerator and denominator (only
         # ok/fail count), so transient degradations (packet-loss, tx-drops)
-        # don't penalise the score — only hard service failures do.
+        # don't penalise the score — only hard service failures do. "off"
+        # (node switched off) is excluded the same way: it is not downtime.
         total = conn.execute(
             "SELECT COUNT(*) as cnt FROM checks WHERE server=? "
             "AND status IN ('ok','fail') AND timestamp > ?",
@@ -861,7 +977,11 @@ def monitoring_status():
         ).fetchone()["cnt"]
         uptime = round((ok_count / total * 100), 1) if total > 0 else 100
 
-        if has_fail:
+        # A switched-off node is "off" as a whole: its last service states
+        # are moot until it answers again.
+        if services_status.get("ssh", {}).get("status") == "off":
+            srv_status = "off"
+        elif has_fail:
             srv_status = "fail"
         elif has_warning:
             srv_status = "warning"
@@ -967,7 +1087,9 @@ def monitoring_uptime():
     result = {}
     for server_name in config.get("servers", {}):
         total = conn.execute(
-            "SELECT COUNT(*) as cnt FROM checks WHERE server=? AND service='ssh' AND timestamp > ?",
+            # "off" (node switched off) is not downtime: out of the denominator.
+            "SELECT COUNT(*) as cnt FROM checks WHERE server=? AND service='ssh' "
+            "AND status != 'off' AND timestamp > ?",
             (server_name, cutoff),
         ).fetchone()["cnt"]
         ok_count = conn.execute(
@@ -1167,9 +1289,10 @@ def monitoring_history():
         ).fetchall()
         svc_rows = [dict(r) for r in asc_rows]
         intervals = _build_intervals(svc_rows, now_utc)
-        check_ts = [datetime.fromisoformat(r["timestamp"]) for r in svc_rows]
+        check_ts, off_ts = _split_check_timestamps(svc_rows)
         timeline = _hourly_timeline(
-            {service: intervals}, check_ts, now_utc, hours=hours
+            {service: intervals}, check_ts, now_utc, hours=hours,
+            off_timestamps=off_ts,
         )
         rows_desc = list(reversed(svc_rows))
     else:

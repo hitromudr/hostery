@@ -123,6 +123,17 @@ function severityColor(sev, badSeconds) {
   return `hsl(${hue}, ${sat}%, ${light}%)`;
 }
 
+// How one hourly bucket from _hourly_timeline is drawn: a CSS class plus an
+// inline color for incident cells only. "off" (node switched off, see
+// switched_off_ok) is a neutral grey from the theme, never the severity scale.
+function timelineCellView(e) {
+  const sev = typeof e.severity === "number" ? e.severity : (e.status === "fail" ? 1 : e.status === "warning" ? 0.5 : 0);
+  if (e.status === "empty") return { cls: "empty", color: null };
+  if (e.status === "off") return { cls: "off", color: null };
+  if (sev > 0) return { cls: "incident", color: severityColor(sev, e.bad_seconds) };
+  return { cls: "ok", color: null };
+}
+
 function startMonPolling() {
   fetchMonAll();
   if (monInterval) clearInterval(monInterval);
@@ -270,6 +281,9 @@ function renderMonServers(data) {
         (svc) => services[svc]?.status === "fail" || services[svc]?.status === "warning",
       );
       let badges = "";
+      if (indicator === "off") {
+        badges += ` <span class="badge-off" title="Switched off: the node did not answer, which is expected for it">off</span>`;
+      }
       if (failCount > 0) {
         badges += ` <span class="badge-clickable badge-fail" onclick="event.stopPropagation(); showProblems('${name}')">${failCount} down</span>`;
       }
@@ -293,7 +307,7 @@ function renderMonServers(data) {
               <span style="font-size: 0.85rem; font-weight: bold; color: ${uptimeColor};">${s.uptime_30d}%</span>
               <span class="mon-help" tabindex="0"><i class="fa-solid fa-circle-info"></i><span class="mon-help-pop">
                 <b>${s.uptime_30d}% — аптайм за 30 дней</b><br>
-                Доля успешных проверок <b>по всем сервисам</b> ноды (ok из ok+fail; <span class="mh-dim">warnings не учитываются</span>). Сейчас ${s.uptime_ok || 0}/${checks}.<br>
+                Доля успешных проверок <b>по всем сервисам</b> ноды (ok из ok+fail; <span class="mh-dim">warnings и off не учитываются</span>). Сейчас ${s.uptime_ok || 0}/${checks}.<br>
                 <span class="mh-dim">Полоса ниже — последние 24 часа по всем сервисам; точка справа — состояние прямо сейчас.</span>
               </span></span>
               <div class="server-indicator ${indicator}"></div>
@@ -302,14 +316,9 @@ function renderMonServers(data) {
           <div class="uptime-bar" id="bar-${name}">
             ${timeline
               .map((e, i) => {
-                const sev = typeof e.severity === "number" ? e.severity : (e.status === "fail" ? 1 : e.status === "warning" ? 0.5 : 0);
-                const isEmpty = e.status === "empty";
-                const isIncident = !isEmpty && sev > 0;
-                const cls = isEmpty ? "empty" : isIncident ? "incident" : "ok";
-                let style = "";
-                if (isIncident) {
-                  style = ` style="background: ${severityColor(sev, e.bad_seconds)};"`;
-                }
+                const { cls, color } = timelineCellView(e);
+                const isIncident = cls === "incident";
+                const style = color ? ` style="background: ${color};"` : "";
                 const clickAttr = isIncident ? `onclick="event.stopPropagation(); showTimelineIncident('${name}', ${i})"` : "";
                 const hh = new Date(e.hour).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
                 let tip = hh;
@@ -319,6 +328,7 @@ function renderMonServers(data) {
                     tip += " (" + formatDurationShort(e.bad_seconds) + ")";
                   }
                 } else if (cls === "ok") tip += " \u2014 OK";
+                else if (cls === "off") tip += " \u2014 switched off";
                 else tip += " \u2014 no data";
                 return `<div class="uptime-block ${cls}"${style} ${clickAttr} title="${tip}"></div>`;
               })
@@ -347,7 +357,7 @@ function renderMonServers(data) {
                 const ms = si.response_time_ms
                   ? `${si.response_time_ms}ms`
                   : "";
-                const labels = {ok: "Operational", fail: "Failed", inactive: "Inactive", warning: "Activating", unknown: "Unknown"};
+                const labels = {ok: "Operational", fail: "Failed", inactive: "Inactive", warning: "Activating", unknown: "Unknown", off: "Switched off"};
                 const tipParts = [labels[st] || st];
                 if (si.error) tipParts.push(si.error);
                 if (ms) tipParts.push(ms);
@@ -468,6 +478,7 @@ async function toggleSvcDetail(server, service) {
     inactive: '<span style="color: var(--text-muted);">Inactive</span>',
     fail: '<span style="color: var(--danger-color);">Failed</span>',
     warning: '<span style="color: var(--warning-color);">Activating</span>',
+    off: '<span style="color: var(--text-muted);">Switched off</span>',
   };
   const statusLabel = statusLabels[svcInfo.status] || '<span style="color: var(--text-muted);">Unknown</span>';
 
@@ -499,15 +510,13 @@ async function toggleSvcDetail(server, service) {
       <div class="uptime-bar svc-uptime-bar">
         ${svcTimeline
           .map((b) => {
-            const sev = typeof b.severity === "number" ? b.severity : 0;
-            const isEmpty = b.status === "empty";
-            const isIncident = !isEmpty && sev > 0;
-            const cls = isEmpty ? "empty" : isIncident ? "incident" : "ok";
-            const style = isIncident ? ` style="background: ${severityColor(sev, b.bad_seconds)};"` : "";
+            const { cls, color } = timelineCellView(b);
+            const style = color ? ` style="background: ${color};"` : "";
             const hh = new Date(b.hour).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
             let tip = hh;
-            if (isEmpty) tip += " — no checks";
-            else if (isIncident) tip += ` — ${Math.round((b.bad_seconds || 0) / 60)}m down`;
+            if (cls === "empty") tip += " — no checks";
+            else if (cls === "off") tip += " — switched off";
+            else if (cls === "incident") tip += ` — ${Math.round((b.bad_seconds || 0) / 60)}m down`;
             else tip += " — ok";
             return `<div class="uptime-block ${cls}"${style} title="${tip.replace(/"/g, "&quot;")}"></div>`;
           })

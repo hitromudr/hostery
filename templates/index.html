@@ -494,6 +494,9 @@
             .server-card .server-indicator.unknown {
                 background-color: var(--text-muted);
             }
+            .server-card .server-indicator.off {
+                background-color: var(--text-muted);
+            }
             .uptime-bar {
                 display: flex;
                 gap: 2px;
@@ -546,6 +549,8 @@
             .uptime-block.ok { background: var(--success-color); opacity: 0.5; }
             .uptime-block.ok:hover { opacity: 0.8; }
             .uptime-block.empty { background: var(--border-color); opacity: 0.3; }
+            /* node switched off (switched_off_ok): neutral, not an outage */
+            .uptime-block.off { background: var(--text-muted); opacity: 0.6; }
             .uptime-block.warning {
                 background: var(--warning-color);
                 cursor: pointer;
@@ -613,6 +618,7 @@
             .svc-dot.warning { background: var(--warning-color); }
             .svc-dot.inactive { background: var(--text-muted); }
             .svc-dot.unknown { background: var(--text-muted); }
+            .svc-dot.off { background: var(--text-muted); }
 
             .svc-inactive {
                 opacity: 0.5;
@@ -669,6 +675,18 @@
             .badge-clickable:hover { opacity: 0.7; }
             .badge-fail { background-color: var(--danger-color) !important; color: var(--on-fill) !important; }
             .badge-warn { background-color: var(--warning-color) !important; color: var(--on-fill) !important; }
+            .badge-off {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 8px;
+                font-size: 0.7rem;
+                font-weight: bold;
+                vertical-align: middle;
+                margin-left: 4px;
+                background-color: var(--raise);
+                border: 1px solid var(--text-muted);
+                color: var(--text-color);
+            }
 
             .svc-fail {
                 background: rgba(247, 118, 142, 0.1);

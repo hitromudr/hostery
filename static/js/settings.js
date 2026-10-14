@@ -284,8 +284,8 @@ function serviceRowHTML(server, svc, baselineSrv) {
   </div>`;
 }
 
-// Owned by the form; everything else (custom_checks, jump, ssh_port, muted, …)
-// is preserved untouched on a Save.
+// Owned by the form; everything else (custom_checks, jump, ssh_port, muted,
+// alerts, switched_off_ok, …) is preserved untouched on a Save.
 const MANAGED_KEYS = ["host", "user", "key", "cockpit_url", "socks", "services"];
 
 function collect() {

@@ -605,8 +605,10 @@
             .svc-item:hover {
                 background: var(--raise);
             }
-            .svc-name { flex: 1; }
-            .svc-ms { color: var(--text-muted); font-size: 0.7rem; }
+            /* One line per service: a long name is cut with an ellipsis (the
+               full name leads the tooltip), the timing never wraps. */
+            .svc-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .svc-ms { color: var(--text-muted); font-size: 0.7rem; flex-shrink: 0; white-space: nowrap; }
             .svc-dot {
                 width: 6px;
                 height: 6px;

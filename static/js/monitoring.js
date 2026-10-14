@@ -358,7 +358,8 @@ function renderMonServers(data) {
                   ? `${si.response_time_ms}ms`
                   : "";
                 const labels = {ok: "Operational", fail: "Failed", inactive: "Inactive", warning: "Activating", unknown: "Unknown", off: "Switched off"};
-                const tipParts = [labels[st] || st];
+                // The name leads: in the card it may be cut by the ellipsis.
+                const tipParts = [svc, labels[st] || st];
                 if (si.error) tipParts.push(si.error);
                 if (ms) tipParts.push(ms);
                 if (typeof si.bad_seconds_24h === "number" && si.bad_seconds_24h > 0) {

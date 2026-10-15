@@ -104,12 +104,13 @@ function updateStatsUI(d) {
   // Fan Speed
   const fanEl = document.getElementById("fan-speed");
   const fanIcon = document.getElementById("fan-icon");
-  if (fanEl) fanEl.innerText = d.fan_speed + "%";
+  // psutil reports the fan in RPM, not percent (the Pi 5 fan runs at ~9700).
+  if (fanEl) fanEl.innerText = d.fan_speed + " rpm";
   if (fanIcon) {
     if (d.fan_speed > 0) {
       fanIcon.classList.add("spinning");
       // Faster spin for higher speed
-      fanIcon.style.animationDuration = d.fan_speed > 50 ? "0.5s" : "1.5s";
+      fanIcon.style.animationDuration = d.fan_speed > 5000 ? "0.5s" : "1.5s";
     } else {
       fanIcon.classList.remove("spinning");
     }

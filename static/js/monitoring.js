@@ -72,6 +72,28 @@ function monDragEnd() {
   document.querySelectorAll("#mon-servers .drag-over").forEach((el) => el.classList.remove("drag-over"));
 }
 
+// --- Per-card expansion in compact mode ---
+// Names of cards the user opened to full while the view is compact.
+const MON_EXPANDED_KEY = "hostery_expanded_servers";
+
+function getExpandedServers() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(MON_EXPANDED_KEY) || "[]");
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch (e) { return new Set(); }
+}
+
+function monToggleCardExpand(e, name) {
+  if (localStorage.getItem("mon-compact") !== "1") return;
+  // Controls inside the header keep their own click.
+  if (e.target.closest("a, button, input, select, .cockpit-ctl, .mon-help, .badge-clickable")) return;
+  const expanded = getExpandedServers();
+  if (expanded.has(name)) expanded.delete(name);
+  else expanded.add(name);
+  localStorage.setItem(MON_EXPANDED_KEY, JSON.stringify(Array.from(expanded)));
+  if (monStatusData) renderMonServers(monStatusData);
+}
+
 function formatDurationShort(seconds) {
   const s = Math.max(0, Math.round(seconds));
   if (s < 60) return s + "s";
@@ -252,6 +274,9 @@ function renderMonServers(data) {
     return;
   }
 
+  const compactView = localStorage.getItem("mon-compact") === "1";
+  const expanded = compactView ? getExpandedServers() : new Set();
+
   const buildCard = (name) => {
       const s = servers[name];
       const services = s.services || {};
@@ -291,13 +316,20 @@ function renderMonServers(data) {
         badges += ` <span class="badge-clickable badge-warn" onclick="event.stopPropagation(); showProblems('${name}')">${warnCount} warn</span>`;
       }
 
-      const compact = localStorage.getItem("mon-compact") === "1";
+      const compact = compactView && !expanded.has(name);
+      // In the compact view the header opens/closes this one card.
+      const headerToggle = compactView
+        ? ` onclick="monToggleCardExpand(event, '${name}')" title="${compact ? "Show full card" : "Back to compact"}"`
+        : "";
+      const chevron = compactView
+        ? `<i class="fas fa-chevron-${compact ? "down" : "up"} card-expand-chevron"></i>`
+        : "";
 
       return `
         <div class="card server-card ${compact ? "compact" : ""}" data-server="${name}"
              ondragstart="monDragStart(event)" ondragover="monDragOver(event)"
              ondragleave="monDragLeave(event)" ondrop="monDrop(event)" ondragend="monDragEnd(event)">
-          <div class="server-header" onmousedown="monArmDrag(event)">
+          <div class="server-header${compactView ? " server-header-toggle" : ""}" onmousedown="monArmDrag(event)"${headerToggle}>
             <div>
               <div class="server-name">${name}${badges}</div>
               <div class="server-ip">${s.host || ""}</div>
@@ -311,6 +343,7 @@ function renderMonServers(data) {
                 <span class="mh-dim">Полоса ниже — последние 24 часа по всем сервисам; точка справа — состояние прямо сейчас.</span>
               </span></span>
               <div class="server-indicator ${indicator}"></div>
+              ${chevron}
             </div>
           </div>
           <div class="uptime-bar" id="bar-${name}">

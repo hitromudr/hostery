@@ -110,6 +110,10 @@ def init_db():
         conn.execute("ALTER TABLE incidents ADD COLUMN suppressed_until TEXT")
     except Exception:
         pass
+    try:
+        conn.execute("ALTER TABLE checks ADD COLUMN value INTEGER")
+    except Exception:
+        pass
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS checks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,6 +123,7 @@ def init_db():
             status TEXT NOT NULL,
             response_time_ms INTEGER,
             error_msg TEXT,
+            value INTEGER,
             UNIQUE(timestamp, server, service)
         );
         CREATE INDEX IF NOT EXISTS idx_checks_ts ON checks(timestamp);
@@ -334,7 +339,12 @@ def node_did_not_answer(exc):
 
 
 def check_server(server_name, server_cfg, config):
-    """Run all checks for a single server. Returns list of (service, status, error)."""
+    """Run all checks for a single server.
+
+    Returns a list of (service, status, error, response_ms[, value]) — custom
+    checks add the integer their command printed, so it can be stored and
+    plotted rather than only judged against `expect`.
+    """
     results = []
     start = time.time()
 
@@ -462,7 +472,7 @@ def check_server(server_name, server_cfg, config):
                     status = "fail" if severity == "critical" else "warning"
                 error = f"{description}: got '{output}' (expected {expect})"
 
-            results.append((name, status, error, svc_elapsed))
+            results.append((name, status, error, svc_elapsed, val if output_is_int else None))
         except Exception as e:
             svc_elapsed = int((time.time() - svc_start) * 1000)
             severity = check.get("severity", "warning")
@@ -616,13 +626,14 @@ def run_check_cycle():
     conn = get_db()
 
     for server_name, results in all_results.items():
-        for service, status, error, response_ms in results:
+        for service, status, error, response_ms, *extra in results:
+            value = extra[0] if extra else None
             # Store check result
             try:
                 conn.execute(
-                    "INSERT OR REPLACE INTO checks (timestamp, server, service, status, response_time_ms, error_msg) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (timestamp, server_name, service, status, response_ms, error),
+                    "INSERT OR REPLACE INTO checks (timestamp, server, service, status, response_time_ms, error_msg, value) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (timestamp, server_name, service, status, response_ms, error, value),
                 )
             except Exception as e:
                 logger.error(f"DB insert error: {e}")
@@ -900,7 +911,7 @@ def monitoring_status():
 
         # One SQL: every check this server saw in the 24h window, ASC.
         rows_24h = conn.execute(
-            "SELECT timestamp, service, status, response_time_ms, error_msg "
+            "SELECT timestamp, service, status, response_time_ms, error_msg, value "
             "FROM checks WHERE server=? AND timestamp > ? ORDER BY timestamp ASC",
             (server_name, day_cutoff),
         ).fetchall()
@@ -922,6 +933,7 @@ def monitoring_status():
                     "status": last["status"],
                     "response_time_ms": last["response_time_ms"],
                     "error": last["error_msg"],
+                    "value": last["value"],
                 }
                 if last["status"] == "fail":
                     has_fail = True
@@ -1282,7 +1294,7 @@ def monitoring_history():
     if service:
         # ASC for interval building, then we'll DESC the response copy.
         asc_rows = conn.execute(
-            "SELECT timestamp, service, status, response_time_ms, error_msg "
+            "SELECT timestamp, service, status, response_time_ms, error_msg, value "
             "FROM checks WHERE server=? AND service=? AND timestamp > ? "
             "ORDER BY timestamp ASC",
             (server, service, cutoff),
@@ -1297,7 +1309,7 @@ def monitoring_history():
         rows_desc = list(reversed(svc_rows))
     else:
         rows = conn.execute(
-            "SELECT timestamp, service, status, response_time_ms, error_msg FROM checks "
+            "SELECT timestamp, service, status, response_time_ms, error_msg, value FROM checks "
             "WHERE server=? AND timestamp > ? ORDER BY timestamp DESC",
             (server, cutoff),
         ).fetchall()

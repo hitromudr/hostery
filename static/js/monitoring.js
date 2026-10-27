@@ -394,6 +394,7 @@ function renderMonServers(data) {
                 // The name leads: in the card it may be cut by the ellipsis.
                 const tipParts = [svc, labels[st] || st];
                 if (si.error) tipParts.push(si.error);
+                if (typeof si.value === "number") tipParts.push(`value ${si.value}`);
                 if (ms) tipParts.push(ms);
                 if (typeof si.bad_seconds_24h === "number" && si.bad_seconds_24h > 0) {
                   const m = Math.round(si.bad_seconds_24h / 60);
@@ -559,6 +560,8 @@ async function toggleSvcDetail(server, service) {
     </div>`
     : "";
 
+  const valueChart = valueSparkline(history);
+
   // Error log (only show entries with errors)
   const errors = history.filter((c) => c.error_msg);
   const errorLog = errors.length
@@ -591,9 +594,41 @@ async function toggleSvcDetail(server, service) {
       ${errorBlock}
       ${actions}
       ${timeline}
+      ${valueChart}
       ${errorLog}
     </div>
   `;
+}
+
+// The number a custom check printed, over the fetched window, oldest on the
+// left. Drawn only from two points up: a lone point is not a trend.
+function valueSparkline(history) {
+  const pts = history.filter((c) => typeof c.value === "number").reverse();
+  if (pts.length < 2) return "";
+  const vals = pts.map((c) => c.value);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = max - min || 1;
+  const W = 300;
+  const H = 40;
+  const t0 = Date.parse(pts[0].timestamp);
+  const tspan = Date.parse(pts[pts.length - 1].timestamp) - t0 || 1;
+  const line = pts
+    .map((c) => {
+      const x = ((Date.parse(c.timestamp) - t0) / tspan) * W;
+      const y = H - 2 - ((c.value - min) / span) * (H - 4);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return `<div class="svc-value-chart">
+      <div style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;">
+        Value, last 24h
+        <span class="svc-value-range" style="float: right; text-transform: none;">min ${min} \u00b7 max ${max} \u00b7 now ${vals[vals.length - 1]}</span>
+      </div>
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" width="100%" height="${H}" role="img" aria-label="value over 24h">
+        <polyline points="${line}" fill="none" stroke="var(--accent-color)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+      </svg>
+    </div>`;
 }
 
 // --- Badge Click: Show Problem Services ---

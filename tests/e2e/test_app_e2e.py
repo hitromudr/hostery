@@ -2,7 +2,7 @@
 
 Scenarios:
   1. auth gate blocks unauthenticated access
-  2. dashboard loads, host metrics populate, Power Health hidden off-Pi
+  2. dashboard loads, host metrics populate, Power Health shown only with vcgencmd
   3. navigation across Dashboard / Net View / Settings
   4. Net View renders fleet server cards + a Cockpit control slot per server
   5. Settings loads the live config with the telegram token redacted
@@ -13,17 +13,33 @@ Scenarios:
  10. Cockpit control renders/degrades gracefully against the fake fleet
 """
 import re
+import sys
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
 
 pytestmark = pytest.mark.e2e
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from sensors import has_pi_module  # noqa: E402
+
 
 def _open_settings(page):
     page.goto("/")
     page.click("#nav-settings")
     expect(page.locator("#settings-root .card").first).to_be_visible(timeout=10000)
+
+
+# Buttons carry a Font Awesome icon whose glyph is part of the accessible name
+# ("\uf0c7 Save"), so names are matched at the end, not with ^\s*. The action bar
+# (Undo/Redo/Revert/Save + status) is rendered twice, above and below the cards.
+def _save(page):
+    page.locator(".act-save").first.click()
+
+
+def _msg(page):
+    return page.locator(".act-msg").first
 
 
 # 1 -------------------------------------------------------------------------
@@ -42,8 +58,11 @@ def test_dashboard_loads_and_metrics(page):
     expect(page.locator("#ram-pct")).not_to_have_text("--", timeout=15000)
     expect(page.locator("#disk-pct")).not_to_have_text("--", timeout=15000)
     expect(page.locator("#clock")).not_to_have_text("--:--", timeout=15000)
-    # No vcgencmd on the test host -> Power Health stays hidden.
-    expect(page.locator("#power-section")).to_be_hidden()
+    # Power Health follows the Pi module: hidden without vcgencmd, shown on a Pi.
+    if has_pi_module():
+        expect(page.locator("#power-section")).to_be_visible(timeout=15000)
+    else:
+        expect(page.locator("#power-section")).to_be_hidden()
 
 
 # 3 -------------------------------------------------------------------------
@@ -86,8 +105,8 @@ def test_settings_add_server_and_persist(page):
         has=page.locator('input.srv-name[value="new-server"]'))
     expect(new_card).to_have_count(1)
     new_card.locator(".srv-host").fill("10.0.0.99")
-    page.get_by_role("button", name=re.compile(r"^\s*Save")).click()
-    expect(page.locator("#cfg-msg")).to_have_text("Saved.", timeout=10000)
+    _save(page)
+    expect(_msg(page)).to_have_text("Saved.", timeout=10000)
     # Persisted: reload reads it back from config.json.
     page.reload()
     page.click("#nav-settings")
@@ -99,8 +118,8 @@ def test_settings_add_server_and_persist(page):
 def test_settings_validation_missing_host(page):
     _open_settings(page)
     page.get_by_role("button", name=re.compile("Add server")).click()  # new-server has empty host
-    page.get_by_role("button", name=re.compile(r"^\s*Save")).click()
-    expect(page.locator("#cfg-msg")).to_contain_text("missing host", timeout=10000)
+    _save(page)
+    expect(_msg(page)).to_contain_text("missing host", timeout=10000)
 
 
 # 8 -------------------------------------------------------------------------
@@ -109,7 +128,7 @@ def test_settings_add_service_row(page):
     card = page.locator('#cfg-servers .card').filter(
         has=page.locator('input.srv-name[value="web-01"]'))
     before = card.locator(".svc-row").count()
-    card.get_by_role("button", name=re.compile(r"^\s*service")).click()
+    card.get_by_role("button", name=re.compile(r"service$")).click()
     expect(card.locator(".svc-row")).to_have_count(before + 1)
 
 
@@ -137,9 +156,9 @@ def test_cockpit_control_renders(page):
 # 11 ------------------------------------------------------------------------
 def test_config_path_and_raw_view(page, hostery_server, playwright):
     _open_settings(page)
-    expect(page.locator("#cfg-path")).not_to_have_text("", timeout=10000)
-    link = page.get_by_role("link", name=re.compile("raw", re.I))
-    expect(link).to_have_attribute("href", "/api/config/raw")
+    # The config path sits in the page header; the old "raw" link gave way to
+    # Export, but /api/config/raw is still served and must stay redacted.
+    expect(page.locator("#cfg-path-hdr")).to_have_text(re.compile(r"config\.json$"), timeout=10000)
     rc = playwright.request.new_context(
         http_credentials={"username": "admin", "password": "pw"})
     r = rc.get(hostery_server["base_url"] + "/api/config/raw")
@@ -154,8 +173,8 @@ def test_save_preserves_custom_checks(page, hostery_server, playwright):
     # web-01 carries custom_checks the editor doesn't render; a Save must not drop them.
     _open_settings(page)
     page.locator("#cfg-interval").fill("321")          # touch a managed field
-    page.get_by_role("button", name=re.compile(r"^\s*Save")).click()
-    expect(page.locator("#cfg-msg")).to_have_text("Saved.", timeout=10000)
+    _save(page)
+    expect(_msg(page)).to_have_text("Saved.", timeout=10000)
     rc = playwright.request.new_context(
         http_credentials={"username": "admin", "password": "pw"})
     cfg = rc.get(hostery_server["base_url"] + "/api/config").json()

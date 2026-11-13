@@ -108,6 +108,8 @@ Configuration lives in `config/config.json`. The annotated example is at `config
 | `muted` | List of service names hidden from status and alerts (managed by the mute button in the UI) |
 | `alerts` | `false` silences Telegram alerts for this server; incidents are still recorded (default `true`) |
 | `switched_off_ok` | `true` for a machine that is powered off at will (a laptop, a workstation). When the node itself does not answer SSH (timeout, refused, no route, a forward with nothing behind it), every check is recorded as `off`: grey on the card and in the 24h timeline, no incident (an open one is closed), no alert, and not counted in uptime. A failed jump host / SOCKS proxy, a rejected key, or a failing service on a node that answered are reported as usual (default `false`) |
+| `direct_check` | `true` adds a `direct` row: the monitor itself opens `host:ssh_port` with no jump or proxy and waits for the SSH banner. No answer is a `warning` (yellow, no incident): the node is alive only around the block. Liveness (`ssh`) and direct reachability (`direct`) show separately (default `false`) |
+| `fallback_jump` | Name of another server: the liveness check goes directly when `direct` answered and through this jump when it did not. Implies the `direct` row. Do not also set a fixed `jump` |
 
 **Service check types:**
 

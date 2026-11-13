@@ -1,0 +1,151 @@
+"""Direct reachability next to liveness (owner's word 2026-11-13).
+
+A node reached through a jump looked green while its own address was cut off
+from the monitor's network — "alive" and "reachable directly" were one bit.
+Now `direct_check` adds a `direct` row: the monitor itself opens host:ssh_port
+and waits for the SSH banner, no jump, no proxy. `fallback_jump` makes the
+liveness check try the node directly first and only then through that jump,
+so a node reachable only around the block is `ssh` ok + `direct` warning.
+"""
+import socket
+import threading
+
+import pytest
+
+import monitoring as m
+
+
+def _banner_server(payload):
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+
+    def serve():
+        conn, _ = srv.accept()
+        if payload:
+            conn.sendall(payload)
+        conn.close()
+        srv.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    return srv.getsockname()[1]
+
+
+def test_probe_direct_reads_the_ssh_banner():
+    port = _banner_server(b"SSH-2.0-OpenSSH_10.0\r\n")
+    m.probe_direct({"host": "127.0.0.1", "ssh_port": port}, timeout=2)
+
+
+def test_probe_direct_rejects_a_port_that_is_not_ssh():
+    port = _banner_server(b"HTTP/1.1 400 Bad Request\r\n")
+    with pytest.raises(OSError, match="no SSH banner"):
+        m.probe_direct({"host": "127.0.0.1", "ssh_port": port}, timeout=2)
+
+
+def test_probe_direct_refused():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    with pytest.raises(OSError):
+        m.probe_direct({"host": "127.0.0.1", "ssh_port": port}, timeout=2)
+
+
+class _Client:
+    def exec_command(self, *a, **k):
+        raise AssertionError("no service checks in these configs")
+
+    def close(self):
+        pass
+
+
+def _run(monkeypatch, cfg, direct_ok):
+    seen = []
+
+    def probe(server_cfg, timeout):
+        if not direct_ok:
+            raise TimeoutError("timed out")
+
+    def connect(name, server_cfg, config):
+        seen.append(server_cfg.get("jump"))
+        return _Client()
+
+    monkeypatch.setattr(m, "probe_direct", probe)
+    monkeypatch.setattr(m, "_get_ssh_client", connect)
+    monkeypatch.setattr(m.time, "sleep", lambda *_: None)
+    results = m.check_server("EMMET", cfg, {"ssh_timeout": 1, "servers": {"GESS": {}}})
+    return {r[0]: r[1] for r in results}, seen
+
+
+NODE = {"host": "192.0.2.1", "user": "dms", "direct_check": True, "fallback_jump": "GESS"}
+
+
+def test_direct_ok_connects_without_the_jump(monkeypatch):
+    status, seen = _run(monkeypatch, dict(NODE), direct_ok=True)
+    assert status == {"direct": "ok", "ssh": "ok"}
+    assert seen == [None]
+
+
+def test_only_around_the_block_is_alive_with_a_direct_warning(monkeypatch):
+    status, seen = _run(monkeypatch, dict(NODE), direct_ok=False)
+    assert status == {"direct": "warning", "ssh": "ok"}
+    assert seen == ["GESS"]
+
+
+def test_direct_check_alone_keeps_the_route_as_configured(monkeypatch):
+    cfg = {"host": "192.0.2.1", "user": "dms", "direct_check": True, "jump": "POLKA"}
+    status, seen = _run(monkeypatch, cfg, direct_ok=False)
+    assert status == {"direct": "warning", "ssh": "ok"}
+    assert seen == ["POLKA"]
+
+
+def test_no_direct_row_unless_asked(monkeypatch):
+    status, seen = _run(monkeypatch, {"host": "192.0.2.1", "user": "dms"}, direct_ok=False)
+    assert status == {"ssh": "ok"}
+    assert seen == [None]
+
+
+def test_dead_node_keeps_the_direct_row(monkeypatch):
+    def probe(server_cfg, timeout):
+        raise TimeoutError("timed out")
+
+    def connect(name, server_cfg, config):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(m, "probe_direct", probe)
+    monkeypatch.setattr(m, "_get_ssh_client", connect)
+    monkeypatch.setattr(m.time, "sleep", lambda *_: None)
+    results = m.check_server("EMMET", dict(NODE), {"ssh_timeout": 1, "servers": {}})
+    status = {r[0]: r[1] for r in results}
+    assert status["ssh"] == "fail" and status["direct"] == "warning"
+
+
+def test_switched_off_node_reports_direct_off(monkeypatch):
+    cfg = dict(NODE, switched_off_ok=True)
+
+    def probe(server_cfg, timeout):
+        raise TimeoutError("timed out")
+
+    def connect(name, server_cfg, config):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(m, "probe_direct", probe)
+    monkeypatch.setattr(m, "_get_ssh_client", connect)
+    monkeypatch.setattr(m.time, "sleep", lambda *_: None)
+    results = m.check_server("LAPTOP", cfg, {"ssh_timeout": 1, "servers": {}})
+    status = {r[0]: r[1] for r in results}
+    assert status == {"ssh": "off", "direct": "off"}
+
+
+def test_config_rejects_bad_direct_keys():
+    import config_api
+    base = {"servers": {"A": {"host": "h", "user": "u", "direct_check": "yes", "fallback_jump": "NOPE"},
+                        "B": {"host": "h", "user": "u", "fallback_jump": "B"}}}
+    assert config_api.validate_config(base) == [
+        "A: direct_check must be true or false",
+        "A: fallback_jump 'NOPE' is not another server",
+        "B: fallback_jump 'B' is not another server",
+    ]
+    ok = {"servers": {"A": {"host": "h", "user": "u", "direct_check": True, "fallback_jump": "B"},
+                      "B": {"host": "h", "user": "u"}}}
+    assert config_api.validate_config(ok) == []

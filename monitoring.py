@@ -2,6 +2,7 @@ import errno
 import json
 import logging
 import os
+import socket
 import sqlite3
 import threading
 import time
@@ -338,6 +339,20 @@ def node_did_not_answer(exc):
     return False
 
 
+def probe_direct(server_cfg, timeout):
+    """Reach host:ssh_port from the monitor itself — no jump, no proxy.
+
+    Waits for the SSH banner: a TCP accept alone can be a middlebox or a
+    forward with nothing behind it. Raises on any failure.
+    """
+    host, port = server_cfg["host"], int(server_cfg.get("ssh_port", 22))
+    with socket.create_connection((host, port), timeout=timeout) as s:
+        s.settimeout(timeout)
+        banner = s.recv(64)
+    if not banner.startswith(b"SSH-"):
+        raise OSError(f"no SSH banner from {host}:{port}: {banner[:24]!r}")
+
+
 def check_server(server_name, server_cfg, config):
     """Run all checks for a single server.
 
@@ -346,6 +361,26 @@ def check_server(server_name, server_cfg, config):
     plotted rather than only judged against `expect`.
     """
     results = []
+
+    # Direct reachability next to liveness (2026-11-13). `direct_check` adds a
+    # `direct` row: the monitor opens host:ssh_port itself, no jump. A node
+    # reachable only around the block is then ssh ok + direct warning instead
+    # of plain green. `fallback_jump` routes the liveness check: directly when
+    # the probe answered, through that jump when it did not.
+    direct_row = None
+    route_cfg = server_cfg
+    if server_cfg.get("direct_check") or server_cfg.get("fallback_jump"):
+        d_start = time.time()
+        try:
+            probe_direct(server_cfg, config.get("direct_timeout", 5))
+            direct_row = ("direct", "ok", None, int((time.time() - d_start) * 1000))
+        except Exception as e:
+            direct_row = ("direct", "warning", f"not reachable directly: {e}",
+                          int((time.time() - d_start) * 1000))
+            fallback = server_cfg.get("fallback_jump")
+            if fallback and not server_cfg.get("jump"):
+                route_cfg = dict(server_cfg, jump=fallback)
+
     start = time.time()
 
     # Connect with a short retry. A single transient SYN drop on a jump leg
@@ -358,7 +393,7 @@ def check_server(server_name, server_cfg, config):
     last_err = None
     for attempt in range(retries + 1):
         try:
-            client = _get_ssh_client(server_name, server_cfg, config)
+            client = _get_ssh_client(server_name, route_cfg, config)
             break
         except Exception as e:
             last_err = e
@@ -371,6 +406,8 @@ def check_server(server_name, server_cfg, config):
             # recorded as "off" so open incidents close and nothing alerts.
             logger.info(f"{server_name} is switched off: {last_err}")
             results.append(("ssh", "off", str(last_err), elapsed))
+            if direct_row:
+                results.append(("direct", "off", None, 0))
             for entry in server_cfg.get("services", []):
                 svc, _ = resolve_service(entry)
                 results.append((svc, "off", None, 0))
@@ -380,6 +417,8 @@ def check_server(server_name, server_cfg, config):
         logger.warning(f"SSH connect failed for {server_name}: {last_err}")
         # SSH itself is down — services are unknown (can't check)
         results.append(("ssh", "fail", str(last_err), elapsed))
+        if direct_row:
+            results.append(direct_row)
         # Resolve each entry to its service NAME — entries may be dicts in the
         # config-driven model, and a dict can't be stored as a service key.
         for entry in server_cfg.get("services", []):
@@ -389,6 +428,8 @@ def check_server(server_name, server_cfg, config):
 
     elapsed_ssh = int((time.time() - start) * 1000)
     results.append(("ssh", "ok", None, elapsed_ssh))
+    if direct_row:
+        results.append(direct_row)
 
     services = server_cfg.get("services", [])
     for entry in services:

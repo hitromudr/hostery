@@ -22,6 +22,11 @@ def validate_config(cfg):
         # A string "false" would be truthy and silently grey out real outages.
         if "switched_off_ok" in srv and not isinstance(srv["switched_off_ok"], bool):
             errors.append(f"{name}: switched_off_ok must be true or false")
+        if "direct_check" in srv and not isinstance(srv["direct_check"], bool):
+            errors.append(f"{name}: direct_check must be true or false")
+        fb = srv.get("fallback_jump")
+        if fb is not None and (fb not in servers or fb == name):
+            errors.append(f"{name}: fallback_jump '{fb}' is not another server")
         for entry in srv.get("services", []):
             if isinstance(entry, str):
                 continue

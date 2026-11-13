@@ -948,7 +948,12 @@ def monitoring_status():
     servers = {}
     for server_name, server_cfg in config.get("servers", {}).items():
         custom_names = [c["name"] for c in server_cfg.get("custom_checks", [])]
-        all_services = ["ssh"] + service_names(server_cfg.get("services", [])) + custom_names
+        # `direct` is written by check_server whenever direct_check or
+        # fallback_jump is set; list it so the API and dashboard see it.
+        direct_names = (["direct"] if server_cfg.get("direct_check")
+                        or server_cfg.get("fallback_jump") else [])
+        all_services = (["ssh"] + direct_names
+                        + service_names(server_cfg.get("services", [])) + custom_names)
 
         # One SQL: every check this server saw in the 24h window, ASC.
         rows_24h = conn.execute(

@@ -149,3 +149,32 @@ def test_config_rejects_bad_direct_keys():
     ok = {"servers": {"A": {"host": "h", "user": "u", "direct_check": True, "fallback_jump": "B"},
                       "B": {"host": "h", "user": "u"}}}
     assert config_api.validate_config(ok) == []
+
+
+def _status_after_cycle(tmp_path, monkeypatch, server_cfg, results):
+    from flask import Flask
+    monkeypatch.setattr(m, "DB_PATH", tmp_path / "mon.db")
+    monkeypatch.setattr(m, "load_config", lambda: {
+        "check_interval": 300, "servers": {"S": dict(server_cfg, alerts=False)}})
+    monkeypatch.setattr(m, "check_server", lambda name, cfg, conf: results)
+    m.init_db()
+    m.run_check_cycle()
+    with Flask(__name__).test_request_context("/"):
+        return m.monitoring_status().get_json()["servers"]["S"]
+
+
+def test_status_api_reports_the_direct_row(tmp_path, monkeypatch):
+    # 2026-11-13: rows were stored but the API listed only ssh + services +
+    # custom checks, so `direct` never reached the dashboard.
+    srv = _status_after_cycle(tmp_path, monkeypatch, NODE,
+                              [("direct", "warning", "not reachable directly: timed out", 5000),
+                               ("ssh", "ok", None, 12)])
+    assert srv["services"]["direct"]["status"] == "warning"
+    assert srv["services"]["direct"]["error"] == "not reachable directly: timed out"
+    assert srv["services"]["ssh"]["status"] == "ok"
+
+
+def test_status_api_has_no_direct_row_unless_asked(tmp_path, monkeypatch):
+    srv = _status_after_cycle(tmp_path, monkeypatch, {"host": "x", "user": "y"},
+                              [("ssh", "ok", None, 12)])
+    assert set(srv["services"]) == {"ssh"}

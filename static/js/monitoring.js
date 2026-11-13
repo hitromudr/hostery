@@ -152,6 +152,9 @@ function timelineCellView(e) {
   const sev = typeof e.severity === "number" ? e.severity : (e.status === "fail" ? 1 : e.status === "warning" ? 0.5 : 0);
   if (e.status === "empty") return { cls: "empty", color: null };
   if (e.status === "off") return { cls: "off", color: null };
+  // Warnings only in the hour: the theme's warning yellow, not the failure
+  // scale (which darkens to brown for an hour-long outage).
+  if (sev > 0 && e.worst === "warning") return { cls: "incident", color: "var(--warning-color)" };
   if (sev > 0) return { cls: "incident", color: severityColor(sev, e.bad_seconds) };
   return { cls: "ok", color: null };
 }
@@ -551,7 +554,7 @@ async function toggleSvcDetail(server, service) {
             let tip = hh;
             if (cls === "empty") tip += " — no checks";
             else if (cls === "off") tip += " — switched off";
-            else if (cls === "incident") tip += ` — ${Math.round((b.bad_seconds || 0) / 60)}m down`;
+            else if (cls === "incident") tip += ` — ${Math.round((b.bad_seconds || 0) / 60)}m ${b.worst === "warning" ? "warning" : "down"}`;
             else tip += " — ok";
             return `<div class="uptime-block ${cls}"${style} title="${tip.replace(/"/g, "&quot;")}"></div>`;
           })

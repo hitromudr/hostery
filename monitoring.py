@@ -907,9 +907,14 @@ def _hourly_timeline(intervals_by_service, check_timestamps, now_utc, hours=24,
 
         bad_seconds = _bucket_intervals(all_intervals_for_hour, hour_start, hour_end)
         severity = _severity_curve(bad_seconds) if bad_seconds > 0 else 0.0
+        # Worst status in the hour (13.11.2026): an hour of warnings only (e.g.
+        # `direct` on a node reached through a jump) is not an outage and must
+        # not take the red-to-brown failure scale.
+        worst = ("fail" if any(iv["severity"] == "fail" for iv in all_intervals_for_hour)
+                 else "warning")
         if severity == 0.0:
             bucket_status = "ok"
-        elif severity >= 1.0:
+        elif severity >= 1.0 and worst == "fail":
             bucket_status = "fail"
         else:
             bucket_status = "warning"
@@ -921,6 +926,8 @@ def _hourly_timeline(intervals_by_service, check_timestamps, now_utc, hours=24,
             "incidents": len(incident_runs),
             "bad_seconds": int(bad_seconds),
         }
+        if severity > 0:
+            entry["worst"] = worst
         if incident_runs:
             entry["failed"] = incident_runs
         timeline.append(entry)

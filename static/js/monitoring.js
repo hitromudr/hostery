@@ -154,7 +154,7 @@ function timelineCellView(e) {
   if (e.status === "off") return { cls: "off", color: null };
   // Warnings only in the hour: the theme's warning yellow, not the failure
   // scale (which darkens to brown for an hour-long outage).
-  if (sev > 0 && e.worst === "warning") return { cls: "incident", color: "var(--timeline-warning, #e6c235)" };
+  if (sev > 0 && e.worst === "warning") return { cls: "incident", color: "var(--timeline-warning, #cebd69)" };
   if (sev > 0) return { cls: "incident", color: severityColor(sev, e.bad_seconds) };
   return { cls: "ok", color: null };
 }

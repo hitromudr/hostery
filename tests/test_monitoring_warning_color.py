@@ -47,7 +47,7 @@ def test_long_fail_hour_is_still_fail():
 
 def test_warning_only_cell_is_drawn_in_the_warning_colour():
     view = _run_js('timelineCellView({status: "warning", worst: "warning", severity: 1, bad_seconds: 3600})')
-    assert view == {"cls": "incident", "color": "var(--timeline-warning, #e6c235)"}
+    assert view == {"cls": "incident", "color": "var(--timeline-warning, #cebd69)"}
 
 
 def test_fail_cell_keeps_the_severity_scale():

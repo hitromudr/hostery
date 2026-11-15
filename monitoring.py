@@ -329,7 +329,8 @@ def node_did_not_answer(exc):
     if isinstance(exc, paramiko.SSHException):
         msg = str(exc)
         return (msg.startswith("Error reading SSH protocol banner")
-                or msg.startswith("Timeout opening channel"))
+                or msg.startswith("Timeout opening channel")
+                or msg.startswith("No existing session"))
     if isinstance(exc, (TimeoutError, EOFError, ConnectionRefusedError, ConnectionResetError)):
         return True
     if isinstance(exc, paramiko.ssh_exception.NoValidConnectionsError):

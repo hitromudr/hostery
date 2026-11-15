@@ -36,6 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
         {("127.0.0.1", 2203): ConnectionRefusedError(errno.ECONNREFUSED, "refused")}),
     # A loopback forward (socat/haproxy) accepts, finds nothing behind, closes.
     paramiko.SSHException("Error reading SSH protocol banner"),
+    paramiko.SSHException("No existing session"),
     EOFError(),
     # Through a jump host: the jump answered, the target did not.
     paramiko.ChannelException(2, "Connect failed"),

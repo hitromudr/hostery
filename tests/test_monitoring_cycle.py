@@ -60,3 +60,112 @@ def test_a_workstation_going_down_records_the_incident_and_stays_quiet(tmp_path,
     assert rows, "проверка не записана — наблюдения нет вовсе"
     assert incidents, "инцидент не открыт — история не покажет, что машина пропадала"
     assert called == [], f"звонок ушёл, хотя alerts=false: {called}"
+
+
+def test_removing_check_from_config_closes_open_incident_without_recovery_alert(tmp_path, monkeypatch):
+    """When a check is retired or moved to another node (e.g. wg0-peers moved
+    from HITRO to MAC), its open incident on the old node must close on the
+    next cycle without sending a 'recovered' alert, instead of hanging red in
+    Active Incidents forever while the server tile is green.
+    """
+    db = tmp_path / "mon.db"
+    monkeypatch.setattr(m, "DB_PATH", db)
+    config = {
+        "check_interval": 300,
+        "servers": {
+            "HITRO": {
+                "host": "185.250.47.112",
+                "services": ["nginx"],
+                "custom_checks": [{"name": "cas-exit-node", "command": "echo 1", "expect": "> 0"}],
+            }
+        },
+    }
+    monkeypatch.setattr(m, "load_config", lambda: config)
+
+    called = []
+    monkeypatch.setattr(m, "send_telegram", lambda cfg, msg: called.append(msg))
+    monkeypatch.setattr(
+        m,
+        "check_server",
+        lambda name, cfg, conf: [
+            ("ssh", "ok", None, 10),
+            ("nginx", "ok", None, 12),
+            ("cas-exit-node", "ok", None, 15, 1),
+        ],
+    )
+
+    m.init_db()
+    conn = m.get_db()
+    conn.execute(
+        "INSERT INTO incidents (server, service, started_at, error_msg) "
+        "VALUES ('HITRO', 'wg0-peers', '2026-11-16T15:09:16+00:00', 'got 0 (expected > 0)')"
+    )
+    conn.execute(
+        "INSERT INTO incidents (server, service, started_at, error_msg) "
+        "VALUES ('RETIRED', 'ssh', '2026-11-04T10:00:00+00:00', 'timed out')"
+    )
+    conn.commit()
+    conn.close()
+
+    m.run_check_cycle()
+
+    conn = m.get_db()
+    open_inc = conn.execute(
+        "SELECT server, service FROM incidents WHERE resolved_at IS NULL"
+    ).fetchall()
+    closed_inc = conn.execute(
+        "SELECT server, service, resolved_at FROM incidents WHERE resolved_at IS NOT NULL ORDER BY server"
+    ).fetchall()
+    conn.close()
+
+    assert [dict(r) for r in open_inc] == []
+    assert [(r["server"], r["service"], r["resolved_at"]) for r in closed_inc] == [
+        ("HITRO", "wg0-peers", m._last_check_time),
+        ("RETIRED", "ssh", m._last_check_time),
+    ]
+    assert called == []
+
+
+def test_incidents_endpoint_closes_orphaned_incidents_immediately(tmp_path, monkeypatch):
+    """GET /api/monitoring/incidents must not return an active incident for a
+    check removed from config.json even before the next 5-minute cycle runs.
+    """
+    from flask import Flask
+
+    db = tmp_path / "mon.db"
+    monkeypatch.setattr(m, "DB_PATH", db)
+    monkeypatch.setattr(
+        m,
+        "load_config",
+        lambda: {"servers": {"HITRO": {"host": "185.250.47.112", "services": ["nginx"]}}},
+    )
+    m.init_db()
+    conn = m.get_db()
+    conn.execute(
+        "INSERT INTO incidents (server, service, started_at, error_msg) "
+        "VALUES ('HITRO', 'wg0-peers', '2026-11-16T15:09:16+00:00', 'got 0 (expected > 0)')"
+    )
+    conn.commit()
+    conn.close()
+
+    with Flask(__name__).test_request_context("/api/monitoring/incidents"):
+        data = m.monitoring_incidents().get_json()
+        assert data["incidents"] == [
+            {
+                "server": "HITRO",
+                "active": [],
+                "resolved": [
+                    {
+                        "id": 1,
+                        "service": "wg0-peers",
+                        "started_at": "2026-11-16T15:09:16+00:00",
+                        "resolved_at": data["incidents"][0]["resolved"][0]["resolved_at"],
+                        "downtime": data["incidents"][0]["resolved"][0]["downtime"],
+                        "error": "got 0 (expected > 0)",
+                    }
+                ],
+            }
+        ]
+
+
+

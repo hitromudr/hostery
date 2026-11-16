@@ -42,6 +42,15 @@ def service_names(services):
     return [resolve_service(s)[0] for s in services]
 
 
+def configured_services(server_cfg):
+    """Return all check names currently configured for a server."""
+    custom_names = [c["name"] for c in server_cfg.get("custom_checks", []) if "name" in c]
+    direct_names = (["direct"] if server_cfg.get("direct_check")
+                    or server_cfg.get("fallback_jump") else [])
+    return (["ssh"] + direct_names
+            + service_names(server_cfg.get("services", [])) + custom_names)
+
+
 def _eval_expect(expr, val, raw):
     expr = (expr or "").strip()
     for op in ("<=", ">=", "==", "!=", "<", ">"):
@@ -584,6 +593,35 @@ def update_incidents(conn, server, service, status, timestamp, error=None):
     return None
 
 
+def close_orphaned_incidents(conn, config, timestamp):
+    """Close open incidents for servers or checks no longer in config.
+
+    When a check is retired or moved to another node (e.g. wg0-peers moved
+    from HITRO to MAC), check_server stops emitting rows for the old
+    (server, service) pair. Without closing its open incident, the server
+    tile turns green while Active Incidents keeps showing the removed check
+    forever. Closing here sends no 'recovered' alert: the check was
+    unconfigured, not recovered.
+    """
+    active_pairs = {
+        (srv, svc)
+        for srv, scfg in (config.get("servers") or {}).items()
+        for svc in configured_services(scfg)
+    }
+    open_rows = conn.execute(
+        "SELECT id, server, service FROM incidents WHERE resolved_at IS NULL"
+    ).fetchall()
+    closed = 0
+    for row in open_rows:
+        if (row["server"], row["service"]) not in active_pairs:
+            conn.execute(
+                "UPDATE incidents SET resolved_at=? WHERE id=?",
+                (timestamp, row["id"]),
+            )
+            closed += 1
+    return closed
+
+
 # --- Telegram ---
 
 
@@ -705,6 +743,7 @@ def run_check_cycle():
                 )
                 send_telegram(config, msg)
 
+    close_orphaned_incidents(conn, config, timestamp)
     conn.commit()
 
     # Prune old data
@@ -955,13 +994,7 @@ def monitoring_status():
 
     servers = {}
     for server_name, server_cfg in config.get("servers", {}).items():
-        custom_names = [c["name"] for c in server_cfg.get("custom_checks", [])]
-        # `direct` is written by check_server whenever direct_check or
-        # fallback_jump is set; list it so the API and dashboard see it.
-        direct_names = (["direct"] if server_cfg.get("direct_check")
-                        or server_cfg.get("fallback_jump") else [])
-        all_services = (["ssh"] + direct_names
-                        + service_names(server_cfg.get("services", [])) + custom_names)
+        all_services = configured_services(server_cfg)
 
         # One SQL: every check this server saw in the 24h window, ASC.
         rows_24h = conn.execute(
@@ -1080,6 +1113,11 @@ def monitoring_incidents():
     """Incidents grouped by server: active + resolved history under same server card."""
     limit = request.args.get("limit", 30, type=int)
     conn = get_db()
+    try:
+        if close_orphaned_incidents(conn, load_config(), datetime.now(timezone.utc).isoformat()):
+            conn.commit()
+    except Exception:
+        pass
 
     # Get active incidents
     active_rows = conn.execute(

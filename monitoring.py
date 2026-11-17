@@ -349,18 +349,48 @@ def node_did_not_answer(exc):
     return False
 
 
+DIRECT_PROBE_TOS = 0x04
+DIRECT_PROBE_CLIENT_BANNER = b"SSH-2.0-OpenSSH_probe\r\n"
+
+
 def probe_direct(server_cfg, timeout):
     """Reach host:ssh_port from the monitor itself — no jump, no proxy.
 
-    Waits for the SSH banner: a TCP accept alone can be a middlebox or a
-    forward with nothing behind it. Raises on any failure.
+    Marks the socket with DIRECT_PROBE_TOS (0x04) so local nat OUTPUT detours
+    (e.g. hitro-ssh-detour) let the probe leave directly, sends a client
+    SSH-2.0 banner immediately upon connect, and reads past the server's banner
+    newline so DPI filters that blackhole the flow on the client's SSH-2.0
+    identification (such as MGTS -> HITRO:22) time out instead of passing on a
+    passive server-banner read.
     """
     host, port = server_cfg["host"], int(server_cfg.get("ssh_port", 22))
-    with socket.create_connection((host, port), timeout=timeout) as s:
+    infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    if not infos:
+        raise OSError(f"cannot resolve {host}:{port}")
+    af, socktype, proto, _, sa = infos[0]
+    with socket.socket(af, socktype, proto) as s:
         s.settimeout(timeout)
+        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        if af == socket.AF_INET:
+            try:
+                s.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, DIRECT_PROBE_TOS)
+            except OSError:
+                pass
+        s.connect(sa)
+        s.sendall(DIRECT_PROBE_CLIENT_BANNER)
         banner = s.recv(64)
-    if not banner.startswith(b"SSH-"):
-        raise OSError(f"no SSH banner from {host}:{port}: {banner[:24]!r}")
+        if not banner.startswith(b"SSH-"):
+            raise OSError(f"no SSH banner from {host}:{port}: {banner[:24]!r}")
+        while b"\n" not in banner and len(banner) < 256:
+            more = s.recv(64)
+            if not more:
+                break
+            banner += more
+        after_nl = banner.split(b"\n", 1)[1] if b"\n" in banner else b""
+        if not after_nl:
+            # Wait for KEXINIT bytes from real sshd (or clean EOF from test stub);
+            # a middlebox that drops the flow after client banner will time out here.
+            s.recv(64)
 
 
 def check_server(server_name, server_cfg, config):

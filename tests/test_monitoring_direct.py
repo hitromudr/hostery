@@ -24,6 +24,11 @@ def _banner_server(payload):
         conn, _ = srv.accept()
         if payload:
             conn.sendall(payload)
+        try:
+            conn.settimeout(0.5)
+            conn.recv(64)
+        except OSError:
+            pass
         conn.close()
         srv.close()
 
@@ -34,6 +39,29 @@ def _banner_server(payload):
 def test_probe_direct_reads_the_ssh_banner():
     port = _banner_server(b"SSH-2.0-OpenSSH_10.0\r\n")
     m.probe_direct({"host": "127.0.0.1", "ssh_port": port}, timeout=2)
+
+
+def test_probe_direct_sends_client_banner_and_fails_on_banner_exchange_blackhole():
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    received = []
+
+    def blackhole_after_client_banner():
+        conn, _ = srv.accept()
+        conn.sendall(b"SSH-2.0-OpenSSH_9.2p1\r\n")
+        received.append(conn.recv(64))
+        # Simulate MGTS DPI filter: keep socket open without sending KEXINIT or FIN
+        import time
+        time.sleep(0.5)
+        conn.close()
+        srv.close()
+
+    threading.Thread(target=blackhole_after_client_banner, daemon=True).start()
+    with pytest.raises((TimeoutError, socket.timeout, OSError)):
+        m.probe_direct({"host": "127.0.0.1", "ssh_port": port}, timeout=0.2)
+    assert received and received[0].startswith(b"SSH-2.0-")
 
 
 def test_probe_direct_rejects_a_port_that_is_not_ssh():

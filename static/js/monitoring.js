@@ -270,6 +270,9 @@ function renderMonServers(data) {
   if (monIsDragging) return;  // never re-render mid-drag (root cause of dup bug)
   const servers = data.servers || {};
   const names = applyServerOrder(Object.keys(servers));
+  if (window.hosteryPrivacy) {
+    window.hosteryPrivacy.registerHosts(Object.values(servers).map((s) => s.host));
+  }
 
   if (!names.length) {
     container.innerHTML =

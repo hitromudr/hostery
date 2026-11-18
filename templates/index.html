@@ -24,6 +24,12 @@
                         document.documentElement.classList.add("theme-light");
                     }
                 } catch (e) {}
+                try {
+                    // Screenshot mode: hide server IPs (see static/js/privacy.js).
+                    if (localStorage.getItem("hostery_hide_ips") === "1") {
+                        document.documentElement.classList.add("hide-ips");
+                    }
+                } catch (e) {}
             })();
         </script>
         <script>
@@ -475,6 +481,21 @@
                 font-size: 0.75rem;
                 color: var(--text-muted);
             }
+            /* "Hide IPs" screenshot mode: addresses become solid bars, Settings
+               fields are blurred. Wrapping is done by static/js/privacy.js. */
+            html.hide-ips .ip-redact {
+                color: transparent !important;
+                background: var(--text-muted);
+                border-radius: 3px;
+                opacity: 0.45;
+                user-select: none;
+            }
+            html.hide-ips #view-settings input,
+            html.hide-ips #view-settings textarea,
+            html.hide-ips #view-settings pre {
+                filter: blur(5px);
+            }
+            .ip-toggle-btn.active { color: var(--accent-color); border-color: var(--accent-color); }
             .server-card .server-indicator {
                 width: 12px;
                 height: 12px;
@@ -1389,6 +1410,9 @@
                 <div class="header-row">
                     <h2>Infrastructure Monitoring</h2>
                     <div style="display: flex; align-items: center; gap: 12px;">
+                        <button class="btn btn-ghost btn-icon ip-toggle-btn" id="ip-toggle-btn" onclick="toggleHideIps()" title="Скрыть IP-адреса (для скриншота)">
+                            <i class="fas fa-eye"></i>
+                        </button>
                         <span id="mon-next-check" class="stat-sub"></span>
                         <button class="btn btn-ghost" onclick="toggleMonCompact()" id="mon-compact-btn">
                             <i class="fas fa-compress-alt"></i> Compact
@@ -1437,6 +1461,7 @@
 
         </div>
 
+        <script src="{{ url_for('static', filename='js/privacy.js') }}?v={{ cache_bust }}"></script>
         <script src="{{ url_for('static', filename='js/monitoring.js') }}?v={{ cache_bust }}"></script>
         <script src="{{ url_for('static', filename='js/settings.js') }}?v={{ cache_bust }}"></script>
         <script src="{{ url_for('static', filename='js/dashboard.js') }}?v={{ cache_bust }}"></script>

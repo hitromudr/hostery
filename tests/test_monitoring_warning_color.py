@@ -53,3 +53,14 @@ def test_warning_only_cell_is_drawn_in_the_warning_colour():
 def test_fail_cell_keeps_the_severity_scale():
     view = _run_js('timelineCellView({status: "fail", worst: "fail", severity: 1, bad_seconds: 3600})')
     assert view == {"cls": "incident", "color": _run_js("severityColor(1, 3600)")}
+
+
+def test_warning_only_service_dot_is_drawn_in_the_warning_colour():
+    color = _run_js('svcDotColor({status: "warning", worst_24h: "warning", severity_24h: 0.99, bad_seconds_24h: 85000})')
+    assert color == "var(--timeline-warning, #cebd69)"
+
+
+def test_fail_service_dot_keeps_the_severity_scale():
+    color = _run_js('svcDotColor({status: "fail", worst_24h: "fail", severity_24h: 0.99, bad_seconds_24h: 85000})')
+    assert color == _run_js("severityColor(0.99, 85000 / 24)")
+

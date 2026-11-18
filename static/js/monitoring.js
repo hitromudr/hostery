@@ -159,6 +159,15 @@ function timelineCellView(e) {
   return { cls: "ok", color: null };
 }
 
+function svcDotColor(si) {
+  if (!si || typeof si.severity_24h !== "number" || si.severity_24h <= 0) return null;
+  if (si.worst_24h === "warning" || (!si.worst_24h && si.status === "warning")) {
+    return "var(--timeline-warning, #cebd69)";
+  }
+  const avgBadPerHour = (si.bad_seconds_24h || 0) / 24;
+  return severityColor(si.severity_24h, avgBadPerHour);
+}
+
 function startMonPolling() {
   fetchMonAll();
   if (monInterval) clearInterval(monInterval);
@@ -407,15 +416,9 @@ function renderMonServers(data) {
                   tipParts.push(`24h down: ${m}m`);
                 }
                 const tip = tipParts.join(" \u2014 ").replace(/"/g, "&quot;");
-                // Color from same severityColor used for timeline cells. Feed
-                // it the per-hour average so the scale matches: a service
-                // that lost 1h total over 24h reads like a single fully-red
-                // bucket spread thin.
-                let dotStyle = "";
-                if (typeof si.severity_24h === "number" && si.severity_24h > 0) {
-                  const avgBadPerHour = (si.bad_seconds_24h || 0) / 24;
-                  dotStyle = ` style="background:${severityColor(si.severity_24h, avgBadPerHour)};"`;
-                }
+                // Color from same severityColor / warning scale used for timeline cells.
+                const dotColor = svcDotColor(si);
+                const dotStyle = dotColor ? ` style="background:${dotColor};"` : "";
                 return `
                   <div class="svc-item svc-${st}" title="${tip}" onclick="event.stopPropagation(); toggleSvcDetail('${name}', '${svc}')">
                     <span class="svc-dot ${st}"${dotStyle}></span>
@@ -1064,6 +1067,7 @@ function _setCockpit(server, html) {
 
 async function loadCockpit(server) {
   let html = "";
+  let retryLater = false;
   try {
     const r = await fetch(`/api/server/${encodeURIComponent(server)}/cockpit-status`);
     const d = await r.json();
@@ -1075,8 +1079,10 @@ async function loadCockpit(server) {
       html = `<button class="btn btn-primary" onclick="installCockpit('${server}')"><i class="fas fa-download"></i> Install Cockpit</button>`;
     } else {
       html = `<span class="cockpit-chip">Cockpit: ${d.status}</span>`;
+      retryLater = true;
     }
-  } catch (e) { html = ""; }
+  } catch (e) { html = ""; retryLater = true; }
+  if (retryLater) _cockpitSeen.delete(server);
   _setCockpit(server, html);
 }
 

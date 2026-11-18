@@ -142,6 +142,17 @@ def post_config():
     return jsonify({"status": "saved"})
 
 
+def _connect_ssh(name, srv, cfg):
+    """Connect to server over SSH, falling back to fallback_jump when direct fails."""
+    try:
+        return monitoring._get_ssh_client(name, srv, cfg)
+    except Exception:
+        fallback = srv.get("fallback_jump")
+        if fallback and not srv.get("jump"):
+            return monitoring._get_ssh_client(name, {**srv, "jump": fallback}, cfg)
+        raise
+
+
 @config_bp.route("/api/config/test-ssh", methods=["POST"])
 def test_ssh():
     data = request.json or {}
@@ -151,7 +162,7 @@ def test_ssh():
     if not srv:
         return jsonify({"error": f"server {name} not found"}), 404
     try:
-        client = monitoring._get_ssh_client(name, srv, cfg)
+        client = _connect_ssh(name, srv, cfg)
         out = monitoring._ssh_exec(client, "echo ok")
         monitoring._close_ssh_client(client)
         return jsonify({"status": "ok" if out == "ok" else "weird", "output": out})
@@ -170,7 +181,7 @@ def cockpit_status(name):
     if cached and _now() - cached[0] < COCKPIT_STATUS_TTL:
         return jsonify({"status": cached[1], "url": url})
     try:
-        client = monitoring._get_ssh_client(name, srv, cfg)
+        client = _connect_ssh(name, srv, cfg)
         out = monitoring._ssh_exec(client, cockpit_status_command())
         monitoring._close_ssh_client(client)
         status = parse_cockpit_status(out)
@@ -183,7 +194,7 @@ def cockpit_status(name):
 def _run_install(name, srv, cfg):
     log = _install_logs[name] = []
     try:
-        client = monitoring._get_ssh_client(name, srv, cfg)
+        client = _connect_ssh(name, srv, cfg)
         mgr = monitoring._ssh_exec(client, pkg_manager_probe_command())
         log.append(f"package manager: {mgr or 'none found'}")
         cmd = install_cockpit_command(mgr)

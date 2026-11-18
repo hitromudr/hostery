@@ -125,3 +125,28 @@ def test_install_forgets_the_cached_answer(ssh, client, monkeypatch):
     ssh.output = {**ssh.output, "db": "active\n/usr/bin/cockpit-bridge"}
     assert client.get("/api/server/db/cockpit-status").get_json()["status"] == "running"
     assert ssh.calls == ["db", "db"]
+
+
+def test_cockpit_status_uses_fallback_jump_when_direct_fails(monkeypatch, client):
+    jumps_seen = []
+    cfg = {"servers": {
+        "tallin": {"host": "141.98.166.243", "user": "dms", "fallback_jump": "SEKO"},
+        "SEKO": {"host": "193.148.59.31", "user": "dms"},
+    }}
+
+    def get_client(name, srv, _cfg):
+        jumps_seen.append((name, srv.get("jump")))
+        if not srv.get("jump"):
+            raise TimeoutError("direct timed out")
+        return name
+
+    monkeypatch.setattr(monitoring, "load_config", lambda: cfg)
+    monkeypatch.setattr(monitoring, "_get_ssh_client", get_client)
+    monkeypatch.setattr(monitoring, "_ssh_exec", lambda cl, cmd, timeout=8: "inactive\n")
+    monkeypatch.setattr(monitoring, "_close_ssh_client", lambda cl: None)
+    c._cockpit_cache.clear()
+
+    r = client.get("/api/server/tallin/cockpit-status").get_json()
+    assert r == {"status": "absent", "url": "https://141.98.166.243:9090"}
+    assert jumps_seen == [("tallin", None), ("tallin", "SEKO")]
+

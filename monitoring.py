@@ -1080,6 +1080,11 @@ def monitoring_status():
                 services_status[svc]["bad_seconds_24h"] = int(bad_seconds_24h)
                 services_status[svc]["severity_24h"] = round(severity_24h, 4)
                 services_status[svc]["checks_24h"] = len(svc_rows)
+                if severity_24h > 0:
+                    services_status[svc]["worst_24h"] = (
+                        "fail" if any(b.get("worst") == "fail" for b in svc_timeline)
+                        else "warning"
+                    )
 
         # Server-wide 24h uptime bar: same machinery, but with intervals from
         # every service in the dict — bad seconds from any service count once.

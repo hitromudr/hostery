@@ -206,3 +206,47 @@ def test_status_api_has_no_direct_row_unless_asked(tmp_path, monkeypatch):
     srv = _status_after_cycle(tmp_path, monkeypatch, {"host": "x", "user": "y"},
                               [("ssh", "ok", None, 12)])
     assert set(srv["services"]) == {"ssh"}
+
+
+def test_get_ssh_client_follows_jump_host_fallback_chain_without_cycles(monkeypatch):
+    connected_hosts = []
+
+    class _FakeTransport:
+        def open_channel(self, kind, dest, local, timeout=None):
+            return ("chan", dest)
+
+        def set_keepalive(self, interval):
+            pass
+
+    class _FakeSSHClient:
+        def set_missing_host_key_policy(self, policy):
+            pass
+
+        def connect(self, hostname=None, username=None, key_filename=None, timeout=None, port=22, sock=None):
+            connected_hosts.append((hostname, sock))
+            if hostname == "193.148.59.31":
+                raise TimeoutError("SEKO timed out")
+
+        def get_transport(self):
+            return _FakeTransport()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(m.paramiko, "SSHClient", _FakeSSHClient)
+    config = {
+        "ssh_timeout": 1,
+        "servers": {
+            "POLKA": {"host": "213.5.128.224", "user": "hitromudr", "jump": "SEKO"},
+            "SEKO": {"host": "193.148.59.31", "user": "dms", "fallback_jump": "GESS"},
+            "GESS": {"host": "5.231.56.198", "user": "dms", "fallback_jump": "SEKO"},
+        },
+    }
+    client = m._get_ssh_client("POLKA", config["servers"]["POLKA"], config)
+    assert client is not None
+    assert connected_hosts == [
+        ("193.148.59.31", None),
+        ("5.231.56.198", None),
+        ("213.5.128.224", ("chan", ("213.5.128.224", 22))),
+    ]
+

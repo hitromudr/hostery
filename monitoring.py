@@ -188,25 +188,44 @@ def _get_ssh_client(server_name, server_cfg, config):
     sock = None
 
     if jump_name:
-        # Connect through jump host
-        jump_cfg = config["servers"][jump_name]
-        jump_key = jump_cfg.get("key")
-        if jump_key:
-            jump_key = os.path.expanduser(jump_key)
+        # Connect through jump host; if the primary jump host itself is
+        # unreachable directly and has its own fallback_jump (e.g. SEKO -> GESS),
+        # follow the fallback_jump chain without looping.
+        seen_jumps = {server_name}
+        cur_jump = jump_name
+        jump_client = None
+        last_jump_err = None
+        while cur_jump and cur_jump not in seen_jumps and cur_jump in config.get("servers", {}):
+            seen_jumps.add(cur_jump)
+            jump_cfg = config["servers"][cur_jump]
+            jump_key = jump_cfg.get("key")
+            if jump_key:
+                jump_key = os.path.expanduser(jump_key)
 
-        jump_client = paramiko.SSHClient()
-        jump_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        try:
-            jump_client.connect(
-                hostname=jump_cfg["host"],
-                username=jump_cfg["user"],
-                key_filename=jump_key,
-                timeout=timeout,
-            )
-        except Exception as e:
+            jc = paramiko.SSHClient()
+            jc.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            try:
+                jc.connect(
+                    hostname=jump_cfg["host"],
+                    username=jump_cfg["user"],
+                    key_filename=jump_key,
+                    timeout=timeout,
+                )
+                jump_client = jc
+                break
+            except Exception as e:
+                try:
+                    jc.close()
+                except Exception:
+                    pass
+                last_jump_err = (cur_jump, e)
+                cur_jump = jump_cfg.get("fallback_jump")
+
+        if jump_client is None:
+            failed_name, failed_err = last_jump_err or (jump_name, RuntimeError("unknown jump host"))
             # Tagged so that a dead jump host is never read as "the target
             # node is switched off" (see node_did_not_answer).
-            raise JumpHostError(f"jump host {jump_name}: {e}") from e
+            raise JumpHostError(f"jump host {failed_name}: {failed_err}") from failed_err
         transport = jump_client.get_transport()
         dest = (server_cfg["host"], int(server_cfg.get("ssh_port", 22)))
         local = ("127.0.0.1", 0)

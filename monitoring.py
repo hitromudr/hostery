@@ -189,12 +189,16 @@ def _get_ssh_client(server_name, server_cfg, config):
 
     if jump_name:
         # Connect through jump host; if the primary jump host itself is
-        # unreachable directly and has its own fallback_jump (e.g. SEKO -> GESS),
-        # follow the fallback_jump chain without looping.
+        # unreachable directly or cannot open a channel to dest and has its own
+        # fallback_jump (e.g. TALLIN -> AEZA -> GESS -> SEKO), follow the
+        # fallback_jump chain without looping.
+        dest = (server_cfg["host"], int(server_cfg.get("ssh_port", 22)))
+        local = ("127.0.0.1", 0)
         seen_jumps = {server_name}
         cur_jump = jump_name
         jump_client = None
         last_jump_err = None
+        last_chan_err = None
         while cur_jump and cur_jump not in seen_jumps and cur_jump in config.get("servers", {}):
             seen_jumps.add(cur_jump)
             jump_cfg = config["servers"][cur_jump]
@@ -211,8 +215,6 @@ def _get_ssh_client(server_name, server_cfg, config):
                     key_filename=jump_key,
                     timeout=timeout,
                 )
-                jump_client = jc
-                break
             except Exception as e:
                 try:
                     jc.close()
@@ -220,22 +222,33 @@ def _get_ssh_client(server_name, server_cfg, config):
                     pass
                 last_jump_err = (cur_jump, e)
                 cur_jump = jump_cfg.get("fallback_jump")
+                continue
+
+            try:
+                transport = jc.get_transport()
+                # Bound the channel open: without a timeout the jump host's kernel
+                # keeps retrying the SYN to dest:22 for ~140s on a transient leg loss
+                # (e.g. POLKA->EMMET), blocking the worker the whole time before
+                # raising ChannelException. Fail fast instead.
+                sock = transport.open_channel("direct-tcpip", dest, local, timeout=timeout)
+                jump_client = jc
+                client._jump_client = jump_client
+                break
+            except Exception as e:
+                try:
+                    jc.close()
+                except Exception:
+                    pass
+                last_chan_err = e
+                cur_jump = jump_cfg.get("fallback_jump")
 
         if jump_client is None:
+            if last_chan_err is not None:
+                raise last_chan_err
             failed_name, failed_err = last_jump_err or (jump_name, RuntimeError("unknown jump host"))
             # Tagged so that a dead jump host is never read as "the target
             # node is switched off" (see node_did_not_answer).
             raise JumpHostError(f"jump host {failed_name}: {failed_err}") from failed_err
-        transport = jump_client.get_transport()
-        dest = (server_cfg["host"], int(server_cfg.get("ssh_port", 22)))
-        local = ("127.0.0.1", 0)
-        # Bound the channel open: without a timeout the jump host's kernel
-        # keeps retrying the SYN to dest:22 for ~140s on a transient leg loss
-        # (e.g. POLKA->EMMET), blocking the worker the whole time before
-        # raising ChannelException. Fail fast instead.
-        sock = transport.open_channel("direct-tcpip", dest, local, timeout=timeout)
-        # Store jump_client on the main client so we can close it later
-        client._jump_client = jump_client
 
     # Optional SOCKS5 proxy (e.g. an autossh/ssh -D tunnel). Accepts
     # "host:port" or {"host":..., "port":...}. Mutually exclusive with jump.
@@ -271,7 +284,11 @@ def _get_ssh_client(server_name, server_cfg, config):
     if sock:
         connect_kwargs["sock"] = sock
 
-    client.connect(**connect_kwargs)
+    try:
+        client.connect(**connect_kwargs)
+    except Exception:
+        _close_ssh_client(client)
+        raise
     # Enable keepalive to prevent stale connections
     transport = client.get_transport()
     if transport:

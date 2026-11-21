@@ -250,3 +250,55 @@ def test_get_ssh_client_follows_jump_host_fallback_chain_without_cycles(monkeypa
         ("213.5.128.224", ("chan", ("213.5.128.224", 22))),
     ]
 
+
+def test_get_ssh_client_falls_back_when_first_jump_open_channel_times_out(monkeypatch):
+    connected_hosts = []
+    closed_hosts = []
+
+    class _FakeTransport:
+        def __init__(self, host):
+            self.host = host
+
+        def open_channel(self, kind, dest, local, timeout=None):
+            if self.host == "5.231.56.198":
+                raise m.paramiko.SSHException("Timeout opening channel.")
+            return ("chan", dest)
+
+        def set_keepalive(self, interval):
+            pass
+
+    class _FakeSSHClient:
+        def __init__(self):
+            self.host = None
+
+        def set_missing_host_key_policy(self, policy):
+            pass
+
+        def connect(self, hostname=None, username=None, key_filename=None, timeout=None, port=22, sock=None):
+            self.host = hostname
+            connected_hosts.append((hostname, sock))
+
+        def get_transport(self):
+            return _FakeTransport(self.host)
+
+        def close(self):
+            closed_hosts.append(self.host)
+
+    monkeypatch.setattr(m.paramiko, "SSHClient", _FakeSSHClient)
+    config = {
+        "ssh_timeout": 1,
+        "servers": {
+            "FINKA": {"host": "5.181.21.235", "user": "dms", "jump": "GESS"},
+            "GESS": {"host": "5.231.56.198", "user": "dms", "fallback_jump": "TALLIN"},
+            "TALLIN": {"host": "141.98.166.243", "user": "dms", "fallback_jump": "AEZA"},
+        },
+    }
+    client = m._get_ssh_client("FINKA", config["servers"]["FINKA"], config)
+    assert client is not None
+    assert connected_hosts == [
+        ("5.231.56.198", None),
+        ("141.98.166.243", None),
+        ("5.181.21.235", ("chan", ("5.181.21.235", 22))),
+    ]
+    assert "5.231.56.198" in closed_hosts
+

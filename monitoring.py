@@ -173,6 +173,59 @@ def load_config():
 
 # --- SSH Checks ---
 
+DEFAULT_FALLBACK_JUMPS = (
+    "TALLIN",
+    "AEZA",
+    "JERSEY",
+    "TBILISI",
+    "EMMET",
+    "POLKA",
+    "SEKO",
+    "GESS",
+    "FINKA",
+)
+JUMP_NEG_TTL = 180.0
+_JUMP_NEG_CACHE = {}
+_JUMP_NEG_LOCK = threading.Lock()
+
+
+def clear_jump_neg_cache():
+    """Clear negative cache of unreachable jump hosts."""
+    with _JUMP_NEG_LOCK:
+        _JUMP_NEG_CACHE.clear()
+
+
+def _get_jump_neg_cache(key, now, ttl):
+    if ttl <= 0:
+        return None
+    with _JUMP_NEG_LOCK:
+        entry = _JUMP_NEG_CACHE.get(key)
+        if not entry:
+            return None
+        ts, err = entry
+        if now - ts < ttl:
+            return err
+        _JUMP_NEG_CACHE.pop(key, None)
+        return None
+
+
+def _set_jump_neg_cache(key, now, err):
+    with _JUMP_NEG_LOCK:
+        _JUMP_NEG_CACHE[key] = (now, err)
+
+
+def _clear_jump_neg_cache_key(key):
+    with _JUMP_NEG_LOCK:
+        _JUMP_NEG_CACHE.pop(key, None)
+
+
+def _expand_jump_names(val):
+    if not val:
+        return []
+    if isinstance(val, (list, tuple)):
+        return [x for x in val if x]
+    return [val]
+
 
 def _get_ssh_client(server_name, server_cfg, config):
     """Create paramiko SSHClient for a server, handling jump hosts."""
@@ -190,18 +243,54 @@ def _get_ssh_client(server_name, server_cfg, config):
     if jump_name:
         # Connect through jump host; if the primary jump host itself is
         # unreachable directly or cannot open a channel to dest and has its own
-        # fallback_jump (e.g. TALLIN -> AEZA -> GESS -> SEKO), follow the
-        # fallback_jump chain without looping.
+        # fallback_jump (or other external jump hosts exist in config), follow
+        # the full fallback chain without looping and skip recently failed jump
+        # hosts via negative cache (JUMP_NEG_TTL).
         dest = (server_cfg["host"], int(server_cfg.get("ssh_port", 22)))
         local = ("127.0.0.1", 0)
+        servers = config.get("servers", {})
+        neg_ttl = float(config.get("jump_neg_ttl", JUMP_NEG_TTL))
+        now = time.monotonic()
+
+        queue = _expand_jump_names(jump_name)
+        queue.extend(_expand_jump_names(server_cfg.get("fallback_jump")))
+        default_jumps = config.get("default_fallback_jumps", DEFAULT_FALLBACK_JUMPS)
+
         seen_jumps = {server_name}
-        cur_jump = jump_name
         jump_client = None
         last_jump_err = None
         last_chan_err = None
-        while cur_jump and cur_jump not in seen_jumps and cur_jump in config.get("servers", {}):
+        default_appended = False
+
+        while queue or not default_appended:
+            if not queue:
+                default_appended = True
+                for cand in default_jumps:
+                    if cand in servers and cand not in seen_jumps:
+                        queue.append(cand)
+                if not queue:
+                    break
+
+            cur_jump = queue.pop(0)
+            if not cur_jump or cur_jump in seen_jumps or cur_jump not in servers:
+                continue
             seen_jumps.add(cur_jump)
-            jump_cfg = config["servers"][cur_jump]
+            jump_cfg = servers[cur_jump]
+            for cand in _expand_jump_names(jump_cfg.get("fallback_jump")):
+                if cand not in seen_jumps:
+                    queue.append(cand)
+
+            host_key = (cur_jump, jump_cfg.get("host"))
+            chan_key = (cur_jump, jump_cfg.get("host"), dest)
+            cached_host_err = _get_jump_neg_cache(host_key, now, neg_ttl)
+            if cached_host_err is not None:
+                last_jump_err = (cur_jump, cached_host_err)
+                continue
+            cached_chan_err = _get_jump_neg_cache(chan_key, now, neg_ttl)
+            if cached_chan_err is not None:
+                last_chan_err = cached_chan_err
+                continue
+
             jump_key = jump_cfg.get("key")
             if jump_key:
                 jump_key = os.path.expanduser(jump_key)
@@ -220,17 +309,22 @@ def _get_ssh_client(server_name, server_cfg, config):
                     jc.close()
                 except Exception:
                     pass
+                _set_jump_neg_cache(host_key, now, e)
                 last_jump_err = (cur_jump, e)
-                cur_jump = jump_cfg.get("fallback_jump")
                 continue
+
+            _clear_jump_neg_cache_key(host_key)
 
             try:
                 transport = jc.get_transport()
+                if transport is None:
+                    raise paramiko.SSHException("No existing session")
                 # Bound the channel open: without a timeout the jump host's kernel
                 # keeps retrying the SYN to dest:22 for ~140s on a transient leg loss
                 # (e.g. POLKA->EMMET), blocking the worker the whole time before
                 # raising ChannelException. Fail fast instead.
                 sock = transport.open_channel("direct-tcpip", dest, local, timeout=timeout)
+                _clear_jump_neg_cache_key(chan_key)
                 jump_client = jc
                 client._jump_client = jump_client
                 break
@@ -239,13 +333,14 @@ def _get_ssh_client(server_name, server_cfg, config):
                     jc.close()
                 except Exception:
                     pass
+                _set_jump_neg_cache(chan_key, now, e)
                 last_chan_err = e
-                cur_jump = jump_cfg.get("fallback_jump")
 
         if jump_client is None:
             if last_chan_err is not None:
                 raise last_chan_err
-            failed_name, failed_err = last_jump_err or (jump_name, RuntimeError("unknown jump host"))
+            first_jump = _expand_jump_names(jump_name)[0] if _expand_jump_names(jump_name) else str(jump_name)
+            failed_name, failed_err = last_jump_err or (first_jump, RuntimeError("unknown jump host"))
             # Tagged so that a dead jump host is never read as "the target
             # node is switched off" (see node_did_not_answer).
             raise JumpHostError(f"jump host {failed_name}: {failed_err}") from failed_err
@@ -473,6 +568,16 @@ def check_server(server_name, server_cfg, config):
             break
         except Exception as e:
             last_err = e
+            fallback = server_cfg.get("fallback_jump")
+            if fallback and not route_cfg.get("jump"):
+                route_cfg = dict(server_cfg, jump=fallback)
+                direct_row = ("direct", "warning", f"not reachable directly: {e}",
+                              int((time.time() - start) * 1000))
+                try:
+                    client = _get_ssh_client(server_name, route_cfg, config)
+                    break
+                except Exception as fb_err:
+                    last_err = fb_err
             if attempt < retries:
                 time.sleep(retry_delay)
     if client is None:

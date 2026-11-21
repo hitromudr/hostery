@@ -209,6 +209,7 @@ def test_status_api_has_no_direct_row_unless_asked(tmp_path, monkeypatch):
 
 
 def test_get_ssh_client_follows_jump_host_fallback_chain_without_cycles(monkeypatch):
+    m.clear_jump_neg_cache()
     connected_hosts = []
 
     class _FakeTransport:
@@ -252,6 +253,7 @@ def test_get_ssh_client_follows_jump_host_fallback_chain_without_cycles(monkeypa
 
 
 def test_get_ssh_client_falls_back_when_first_jump_open_channel_times_out(monkeypatch):
+    m.clear_jump_neg_cache()
     connected_hosts = []
     closed_hosts = []
 
@@ -301,4 +303,94 @@ def test_get_ssh_client_falls_back_when_first_jump_open_channel_times_out(monkey
         ("5.181.21.235", ("chan", ("5.181.21.235", 22))),
     ]
     assert "5.231.56.198" in closed_hosts
+
+
+def test_get_ssh_client_negative_caches_failed_jump_hosts_and_continues_via_default_jumps(monkeypatch):
+    """Инцидент 21.11.2026 06:17 UTC: TALLIN не ответил, AEZA сбросила сессию с
+    SSHException('No existing session') при fallback_jump=null в config.json, и
+    все 8 узлов упали на AEZA, не попробовав JERSEY / TBILISI / EMMET и тратя
+    по 10 с таймаута на мёртвых прыжках в каждом воркере."""
+    m.clear_jump_neg_cache()
+    connected_hosts = []
+    now = [1000.0]
+    monkeypatch.setattr(m.time, "monotonic", lambda: now[0])
+
+    class _FakeTransport:
+        def open_channel(self, kind, dest, local, timeout=None):
+            return ("chan", dest)
+
+        def set_keepalive(self, interval):
+            pass
+
+    class _FakeSSHClient:
+        def set_missing_host_key_policy(self, policy):
+            pass
+
+        def connect(self, hostname=None, username=None, key_filename=None, timeout=None, port=22, sock=None):
+            connected_hosts.append((hostname, sock))
+            if hostname == "141.98.166.243":
+                raise TimeoutError("TALLIN timed out")
+            if hostname == "89.22.236.42":
+                raise m.paramiko.SSHException("No existing session")
+
+        def get_transport(self):
+            return _FakeTransport()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(m.paramiko, "SSHClient", _FakeSSHClient)
+    config = {
+        "ssh_timeout": 1,
+        "jump_neg_ttl": 180,
+        "servers": {
+            "POLKA": {"host": "213.5.128.224", "user": "hitromudr", "jump": "TALLIN"},
+            "SEKO": {"host": "193.148.59.31", "user": "dms", "jump": "TALLIN"},
+            "TALLIN": {"host": "141.98.166.243", "user": "dms", "fallback_jump": "AEZA"},
+            "AEZA": {"host": "89.22.236.42", "user": "dms", "fallback_jump": None},
+            "JERSEY": {"host": "85.209.134.77", "user": "dms", "fallback_jump": None},
+        },
+    }
+    # First server: tries TALLIN (fails), tries AEZA (fails with No existing session),
+    # automatically continues to JERSEY from DEFAULT_FALLBACK_JUMPS even though AEZA.fallback_jump is None.
+    client1 = m._get_ssh_client("POLKA", config["servers"]["POLKA"], config)
+    assert client1 is not None
+    assert connected_hosts == [
+        ("141.98.166.243", None),
+        ("89.22.236.42", None),
+        ("85.209.134.77", None),
+        ("213.5.128.224", ("chan", ("213.5.128.224", 22))),
+    ]
+
+    # Second server within 180s TTL: skips TALLIN and AEZA immediately via negative cache
+    # and connects directly through JERSEY.
+    connected_hosts.clear()
+    now[0] = 1050.0
+    client2 = m._get_ssh_client("SEKO", config["servers"]["SEKO"], config)
+    assert client2 is not None
+    assert connected_hosts == [
+        ("85.209.134.77", None),
+        ("193.148.59.31", ("chan", ("193.148.59.31", 22))),
+    ]
+
+
+def test_check_server_falls_back_to_jump_when_direct_probe_ok_but_ssh_connect_fails(monkeypatch):
+    """Если probe_direct прошёл (баннер получен), а следом прямое Paramiko-соединение
+    было сброшено с 'No existing session', check_server обязан перейти на fallback_jump."""
+    seen_jumps = []
+
+    def connect(name, server_cfg, config):
+        seen_jumps.append(server_cfg.get("jump"))
+        if server_cfg.get("jump") is None:
+            raise m.paramiko.SSHException("No existing session")
+        return _Client()
+
+    monkeypatch.setattr(m, "probe_direct", lambda server_cfg, timeout: None)
+    monkeypatch.setattr(m, "_get_ssh_client", connect)
+    monkeypatch.setattr(m.time, "sleep", lambda *_: None)
+    results = m.check_server("AEZA", dict(NODE, fallback_jump="JERSEY"), {"ssh_timeout": 1, "servers": {"JERSEY": {}}})
+    status = {r[0]: r[1] for r in results}
+    assert status == {"direct": "warning", "ssh": "ok"}
+    assert seen_jumps == [None, "JERSEY"]
+
 

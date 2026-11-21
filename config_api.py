@@ -25,8 +25,14 @@ def validate_config(cfg):
         if "direct_check" in srv and not isinstance(srv["direct_check"], bool):
             errors.append(f"{name}: direct_check must be true or false")
         fb = srv.get("fallback_jump")
-        if fb is not None and (fb not in servers or fb == name):
-            errors.append(f"{name}: fallback_jump '{fb}' is not another server")
+        if fb is not None:
+            fb_items = fb if isinstance(fb, list) else [fb]
+            if not fb_items or not isinstance(fb, (str, list)):
+                errors.append(f"{name}: fallback_jump '{fb}' is not another server")
+            else:
+                for item in fb_items:
+                    if not isinstance(item, str) or item not in servers or item == name:
+                        errors.append(f"{name}: fallback_jump '{item}' is not another server")
         for entry in srv.get("services", []):
             if isinstance(entry, str):
                 continue

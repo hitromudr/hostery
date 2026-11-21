@@ -362,6 +362,11 @@ def _get_ssh_client(server_name, server_cfg, config):
         s.connect((server_cfg["host"], int(server_cfg.get("ssh_port", 22))))
         sock = s
 
+    if sock is None and (server_cfg.get("direct_check") or server_cfg.get("fallback_jump")):
+        sock = _open_direct_socket(
+            server_cfg["host"], int(server_cfg.get("ssh_port", 22)), timeout
+        )
+
     # Порт берётся из конфигурации, а не подразумевается 22. Он и раньше был
     # в схеме (`ssh_port`), но учитывался только в ветке SOCKS: прямое
     # соединение молча шло на 22, то есть узел, доступный через loopback-форвард
@@ -382,6 +387,11 @@ def _get_ssh_client(server_name, server_cfg, config):
     try:
         client.connect(**connect_kwargs)
     except Exception:
+        if sock is not None and hasattr(sock, "close"):
+            try:
+                sock.close()
+            except Exception:
+                pass
         _close_ssh_client(client)
         raise
     # Enable keepalive to prevent stale connections
@@ -484,6 +494,31 @@ DIRECT_PROBE_TOS = 0x04
 DIRECT_PROBE_CLIENT_BANNER = b"SSH-2.0-OpenSSH_probe\r\n"
 
 
+def _open_direct_socket(host, port, timeout):
+    """Open a TCP socket marked with DIRECT_PROBE_TOS (0x04) so local nat OUTPUT detours
+    (e.g. hitro-ssh-detour) let direct SSH connections leave directly instead of
+    redirecting them to a detour listener or standby bastion.
+    """
+    infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    if not infos:
+        raise OSError(f"cannot resolve {host}:{port}")
+    af, socktype, proto, _, sa = infos[0]
+    s = socket.socket(af, socktype, proto)
+    try:
+        s.settimeout(timeout)
+        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        if af == socket.AF_INET:
+            try:
+                s.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, DIRECT_PROBE_TOS)
+            except OSError:
+                pass
+        s.connect(sa)
+        return s
+    except Exception:
+        s.close()
+        raise
+
+
 def probe_direct(server_cfg, timeout):
     """Reach host:ssh_port from the monitor itself — no jump, no proxy.
 
@@ -495,19 +530,7 @@ def probe_direct(server_cfg, timeout):
     passive server-banner read.
     """
     host, port = server_cfg["host"], int(server_cfg.get("ssh_port", 22))
-    infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    if not infos:
-        raise OSError(f"cannot resolve {host}:{port}")
-    af, socktype, proto, _, sa = infos[0]
-    with socket.socket(af, socktype, proto) as s:
-        s.settimeout(timeout)
-        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        if af == socket.AF_INET:
-            try:
-                s.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, DIRECT_PROBE_TOS)
-            except OSError:
-                pass
-        s.connect(sa)
+    with _open_direct_socket(host, port, timeout) as s:
         s.sendall(DIRECT_PROBE_CLIENT_BANNER)
         banner = s.recv(64)
         if not banner.startswith(b"SSH-"):

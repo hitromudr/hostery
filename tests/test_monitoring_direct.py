@@ -394,3 +394,40 @@ def test_check_server_falls_back_to_jump_when_direct_probe_ok_but_ssh_connect_fa
     assert seen_jumps == [None, "JERSEY"]
 
 
+def test_get_ssh_client_marks_direct_socket_with_direct_probe_tos(monkeypatch):
+    """Инцидент 21.11.2026 14:53 UTC: при режиме pin-mac на MAC, когда probe_direct
+    с IP_TOS=0x04 проходил, прямое соединение _get_ssh_client без IP_TOS=0x04
+    перехватывалось правилом hitro-ssh-detour-redirect (! --tos 0x04 -> :2231)
+    и попадало на sshd-bastion MAC вместо реального HITRO."""
+    port = _banner_server(b"SSH-2.0-OpenSSH_10.0\r\n")
+    captured_sock = []
+
+    class _FakeTransport:
+        def set_keepalive(self, interval):
+            pass
+
+    class _FakeSSHClient:
+        def set_missing_host_key_policy(self, policy):
+            pass
+
+        def connect(self, **kwargs):
+            captured_sock.append(kwargs.get("sock"))
+
+        def get_transport(self):
+            return _FakeTransport()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(m.paramiko, "SSHClient", _FakeSSHClient)
+    cfg = {"host": "127.0.0.1", "ssh_port": port, "user": "root", "direct_check": True, "fallback_jump": "TALLIN"}
+    m._get_ssh_client("HITRO", cfg, {"ssh_timeout": 2})
+    assert len(captured_sock) == 1 and captured_sock[0] is not None
+    try:
+        tos = captured_sock[0].getsockopt(socket.IPPROTO_IP, socket.IP_TOS)
+        assert (tos & m.DIRECT_PROBE_TOS) == m.DIRECT_PROBE_TOS
+    finally:
+        captured_sock[0].close()
+
+
+

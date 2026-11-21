@@ -420,7 +420,7 @@ def _ssh_exec(client, cmd, timeout=8):
         _, stdout, stderr = client.exec_command(cmd, timeout=timeout)
         return stdout.read().decode().strip()
     except Exception as e:
-        if "Timeout opening channel" in str(e) or "Channel" in str(e):
+        if isinstance(e, TimeoutError) or "Timeout opening channel" in str(e) or "Channel" in str(e):
             # Retry once after short delay
             time.sleep(1)
             _, stdout, stderr = client.exec_command(cmd, timeout=timeout)

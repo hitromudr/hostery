@@ -128,3 +128,28 @@ def test_ssh_port_defaults_to_22(monkeypatch):
     monkeypatch.setattr(m.paramiko, "SSHClient", FakeClient)
     m._get_ssh_client("HITRO", {"host": "203.0.113.7", "user": "root"}, {})
     assert captured["port"] == 22
+
+
+def test_ssh_exec_retries_once_on_channel_read_timeout(monkeypatch):
+    """При таймауте чтения канала (socket.timeout / TimeoutError с пустым str(e))
+    _ssh_exec обязан выполнить один повтор, как и задумано в его docstring."""
+    monkeypatch.setattr(m.time, "sleep", lambda *_: None)
+    calls = []
+
+    class FakeStdout:
+        def __init__(self, should_timeout):
+            self.should_timeout = should_timeout
+
+        def read(self):
+            if self.should_timeout:
+                raise TimeoutError()
+            return b"4\n"
+
+    class FakeClient:
+        def exec_command(self, cmd, timeout=8):
+            calls.append((cmd, timeout))
+            return None, FakeStdout(should_timeout=(len(calls) == 1)), None
+
+    assert m._ssh_exec(FakeClient(), "wg show", timeout=10) == "4"
+    assert len(calls) == 2
+

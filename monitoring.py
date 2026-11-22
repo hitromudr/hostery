@@ -180,7 +180,7 @@ DEFAULT_FALLBACK_JUMPS = (
     "TBILISI",
     "EMMET",
     "POLKA",
-    "SEKO",
+    "STOCK",
     "GESS",
     "FINKA",
 )

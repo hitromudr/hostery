@@ -226,7 +226,7 @@ def test_get_ssh_client_follows_jump_host_fallback_chain_without_cycles(monkeypa
         def connect(self, hostname=None, username=None, key_filename=None, timeout=None, port=22, sock=None):
             connected_hosts.append((hostname, sock))
             if hostname == "193.148.59.31":
-                raise TimeoutError("SEKO timed out")
+                raise TimeoutError("STOCK timed out")
 
         def get_transport(self):
             return _FakeTransport()
@@ -238,9 +238,9 @@ def test_get_ssh_client_follows_jump_host_fallback_chain_without_cycles(monkeypa
     config = {
         "ssh_timeout": 1,
         "servers": {
-            "POLKA": {"host": "213.5.128.224", "user": "hitromudr", "jump": "SEKO"},
-            "SEKO": {"host": "193.148.59.31", "user": "dms", "fallback_jump": "GESS"},
-            "GESS": {"host": "5.231.56.198", "user": "dms", "fallback_jump": "SEKO"},
+            "POLKA": {"host": "213.5.128.224", "user": "hitromudr", "jump": "STOCK"},
+            "STOCK": {"host": "193.148.59.31", "user": "dms", "fallback_jump": "GESS"},
+            "GESS": {"host": "5.231.56.198", "user": "dms", "fallback_jump": "STOCK"},
         },
     }
     client = m._get_ssh_client("POLKA", config["servers"]["POLKA"], config)
@@ -345,7 +345,7 @@ def test_get_ssh_client_negative_caches_failed_jump_hosts_and_continues_via_defa
         "jump_neg_ttl": 180,
         "servers": {
             "POLKA": {"host": "213.5.128.224", "user": "hitromudr", "jump": "TALLIN"},
-            "SEKO": {"host": "193.148.59.31", "user": "dms", "jump": "TALLIN"},
+            "STOCK": {"host": "193.148.59.31", "user": "dms", "jump": "TALLIN"},
             "TALLIN": {"host": "141.98.166.243", "user": "dms", "fallback_jump": "AEZA"},
             "AEZA": {"host": "89.22.236.42", "user": "dms", "fallback_jump": None},
             "JERSEY": {"host": "85.209.134.77", "user": "dms", "fallback_jump": None},
@@ -366,7 +366,7 @@ def test_get_ssh_client_negative_caches_failed_jump_hosts_and_continues_via_defa
     # and connects directly through JERSEY.
     connected_hosts.clear()
     now[0] = 1050.0
-    client2 = m._get_ssh_client("SEKO", config["servers"]["SEKO"], config)
+    client2 = m._get_ssh_client("STOCK", config["servers"]["STOCK"], config)
     assert client2 is not None
     assert connected_hosts == [
         ("85.209.134.77", None),

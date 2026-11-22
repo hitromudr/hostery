@@ -130,8 +130,8 @@ def test_install_forgets_the_cached_answer(ssh, client, monkeypatch):
 def test_cockpit_status_uses_fallback_jump_when_direct_fails(monkeypatch, client):
     jumps_seen = []
     cfg = {"servers": {
-        "tallin": {"host": "141.98.166.243", "user": "dms", "fallback_jump": "SEKO"},
-        "SEKO": {"host": "193.148.59.31", "user": "dms"},
+        "tallin": {"host": "141.98.166.243", "user": "dms", "fallback_jump": "STOCK"},
+        "STOCK": {"host": "193.148.59.31", "user": "dms"},
     }}
 
     def get_client(name, srv, _cfg):
@@ -148,5 +148,5 @@ def test_cockpit_status_uses_fallback_jump_when_direct_fails(monkeypatch, client
 
     r = client.get("/api/server/tallin/cockpit-status").get_json()
     assert r == {"status": "absent", "url": "https://141.98.166.243:9090"}
-    assert jumps_seen == [("tallin", None), ("tallin", "SEKO")]
+    assert jumps_seen == [("tallin", None), ("tallin", "STOCK")]
 

@@ -432,4 +432,86 @@ def test_get_ssh_client_marks_direct_socket_with_direct_probe_tos(monkeypatch):
         captured_sock[0].close()
 
 
+def test_get_ssh_client_falls_back_when_target_handshake_over_jump_channel_drops_banner(monkeypatch):
+    """Инцидент 23.11.2026 17:30 UTC: TALLIN открыл direct-tcpip к HITRO:22,
+    но SSH-баннер через TALLIN->HITRO оборвался по EOF ('No existing session').
+    _get_ssh_client обязан закрыть канал и jump-клиент TALLIN, записать
+    негативный кэш chan_key и перейти к следующему jump-хосту (AEZA)."""
+    m.clear_jump_neg_cache()
+    connected_hosts = []
+    closed_hosts = []
+    closed_chans = []
+    now = [2000.0]
+    monkeypatch.setattr(m.time, "monotonic", lambda: now[0])
+
+    class _FakeChan:
+        def __init__(self, jump_host, dest):
+            self.jump_host = jump_host
+            self.dest = dest
+
+        def close(self):
+            closed_chans.append((self.jump_host, self.dest))
+
+    class _FakeTransport:
+        def __init__(self, host):
+            self.host = host
+
+        def open_channel(self, kind, dest, local, timeout=None):
+            return _FakeChan(self.host, dest)
+
+        def set_keepalive(self, interval):
+            pass
+
+    class _FakeSSHClient:
+        def __init__(self):
+            self.host = None
+
+        def set_missing_host_key_policy(self, policy):
+            pass
+
+        def connect(self, hostname=None, username=None, key_filename=None, timeout=None, port=22, sock=None):
+            self.host = hostname
+            jump_host = getattr(sock, "jump_host", None)
+            connected_hosts.append((hostname, jump_host))
+            if hostname == "185.250.47.112" and jump_host == "141.98.166.243":
+                raise m.paramiko.SSHException("No existing session")
+
+        def get_transport(self):
+            return _FakeTransport(self.host)
+
+        def close(self):
+            closed_hosts.append(self.host)
+
+    monkeypatch.setattr(m.paramiko, "SSHClient", _FakeSSHClient)
+    config = {
+        "ssh_timeout": 1,
+        "jump_neg_ttl": 180,
+        "servers": {
+            "HITRO": {"host": "185.250.47.112", "user": "root", "jump": "TALLIN"},
+            "TALLIN": {"host": "141.98.166.243", "user": "dms", "fallback_jump": "AEZA"},
+            "AEZA": {"host": "89.22.236.42", "user": "dms", "fallback_jump": None},
+        },
+    }
+    client = m._get_ssh_client("HITRO", config["servers"]["HITRO"], config)
+    assert client is not None
+    assert connected_hosts == [
+        ("141.98.166.243", None),
+        ("185.250.47.112", "141.98.166.243"),
+        ("89.22.236.42", None),
+        ("185.250.47.112", "89.22.236.42"),
+    ]
+    assert ("141.98.166.243", ("185.250.47.112", 22)) in closed_chans
+    assert "141.98.166.243" in closed_hosts
+
+    # Next call within TTL skips TALLIN->HITRO channel via negative cache and goes via AEZA.
+    connected_hosts.clear()
+    now[0] = 2020.0
+    client2 = m._get_ssh_client("HITRO", config["servers"]["HITRO"], config)
+    assert client2 is not None
+    assert connected_hosts == [
+        ("89.22.236.42", None),
+        ("185.250.47.112", "89.22.236.42"),
+    ]
+
+
 

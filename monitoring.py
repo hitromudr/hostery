@@ -228,15 +228,28 @@ def _expand_jump_names(val):
 
 def _get_ssh_client(server_name, server_cfg, config):
     """Create paramiko SSHClient for a server, handling jump hosts."""
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
     timeout = config.get("ssh_timeout", 10)
     key_path = server_cfg.get("key")
     if key_path:
         key_path = os.path.expanduser(key_path)
 
+    # Порт берётся из конфигурации, а не подразумевается 22. Он и раньше был
+    # в схеме (`ssh_port`), но учитывался только в ветке SOCKS: прямое
+    # соединение молча шло на 22, то есть узел, доступный через loopback-форвард
+    # на другом порту, проверялся бы не тот. Так выглядит запасной ноутбук с
+    # малины — его sshd приходит на 127.0.0.1:2203, а на :22 отвечает сама
+    # малина: проверка была бы зелёной, отвечая о другой машине.
+    base_connect_kwargs = {
+        "hostname": server_cfg["host"],
+        "port": int(server_cfg.get("ssh_port", 22)),
+        "username": server_cfg["user"],
+        "timeout": timeout,
+    }
+    if key_path:
+        base_connect_kwargs["key_filename"] = key_path
+
     jump_name = server_cfg.get("jump")
+    client = None
     sock = None
 
     if jump_name:
@@ -314,6 +327,8 @@ def _get_ssh_client(server_name, server_cfg, config):
 
             _clear_jump_neg_cache_key(host_key)
 
+            chan = None
+            cand_client = None
             try:
                 transport = jc.get_transport()
                 if transport is None:
@@ -322,12 +337,27 @@ def _get_ssh_client(server_name, server_cfg, config):
                 # keeps retrying the SYN to dest:22 for ~140s on a transient leg loss
                 # (e.g. POLKA->EMMET), blocking the worker the whole time before
                 # raising ChannelException. Fail fast instead.
-                sock = transport.open_channel("direct-tcpip", dest, local, timeout=timeout)
+                chan = transport.open_channel("direct-tcpip", dest, local, timeout=timeout)
+                cand_client = paramiko.SSHClient()
+                cand_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                cand_client.connect(**base_connect_kwargs, sock=chan)
                 _clear_jump_neg_cache_key(chan_key)
                 jump_client = jc
+                client = cand_client
                 client._jump_client = jump_client
+                sock = chan
                 break
             except Exception as e:
+                if chan is not None and hasattr(chan, "close"):
+                    try:
+                        chan.close()
+                    except Exception:
+                        pass
+                if cand_client is not None:
+                    try:
+                        cand_client.close()
+                    except Exception:
+                        pass
                 try:
                     jc.close()
                 except Exception:
@@ -344,55 +374,46 @@ def _get_ssh_client(server_name, server_cfg, config):
             # node is switched off" (see node_did_not_answer).
             raise JumpHostError(f"jump host {failed_name}: {failed_err}") from failed_err
 
-    # Optional SOCKS5 proxy (e.g. an autossh/ssh -D tunnel). Accepts
-    # "host:port" or {"host":..., "port":...}. Mutually exclusive with jump.
-    socks_cfg = server_cfg.get("socks")
-    if socks_cfg and sock is None:
-        import socks as _socks  # PySocks
-        if isinstance(socks_cfg, str):
-            sh, _, sp = socks_cfg.partition(":")
-            socks_host, socks_port = sh or "127.0.0.1", int(sp or 1080)
-        else:
-            socks_host = socks_cfg.get("host", "127.0.0.1")
-            socks_port = int(socks_cfg.get("port", 1080))
-        s = _socks.socksocket()
-        s.set_proxy(_socks.SOCKS5, socks_host, socks_port)
-        s.settimeout(timeout)
-        s.connect((server_cfg["host"], int(server_cfg.get("ssh_port", 22))))
-        sock = s
+    if client is None:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    if sock is None and (server_cfg.get("direct_check") or server_cfg.get("fallback_jump")):
-        sock = _open_direct_socket(
-            server_cfg["host"], int(server_cfg.get("ssh_port", 22)), timeout
-        )
+        # Optional SOCKS5 proxy (e.g. an autossh/ssh -D tunnel). Accepts
+        # "host:port" or {"host":..., "port":...}. Mutually exclusive with jump.
+        socks_cfg = server_cfg.get("socks")
+        if socks_cfg and sock is None:
+            import socks as _socks  # PySocks
+            if isinstance(socks_cfg, str):
+                sh, _, sp = socks_cfg.partition(":")
+                socks_host, socks_port = sh or "127.0.0.1", int(sp or 1080)
+            else:
+                socks_host = socks_cfg.get("host", "127.0.0.1")
+                socks_port = int(socks_cfg.get("port", 1080))
+            s = _socks.socksocket()
+            s.set_proxy(_socks.SOCKS5, socks_host, socks_port)
+            s.settimeout(timeout)
+            s.connect((server_cfg["host"], int(server_cfg.get("ssh_port", 22))))
+            sock = s
 
-    # Порт берётся из конфигурации, а не подразумевается 22. Он и раньше был
-    # в схеме (`ssh_port`), но учитывался только в ветке SOCKS: прямое
-    # соединение молча шло на 22, то есть узел, доступный через loopback-форвард
-    # на другом порту, проверялся бы не тот. Так выглядит запасной ноутбук с
-    # малины — его sshd приходит на 127.0.0.1:2203, а на :22 отвечает сама
-    # малина: проверка была бы зелёной, отвечая о другой машине.
-    connect_kwargs = {
-        "hostname": server_cfg["host"],
-        "port": int(server_cfg.get("ssh_port", 22)),
-        "username": server_cfg["user"],
-        "timeout": timeout,
-    }
-    if key_path:
-        connect_kwargs["key_filename"] = key_path
-    if sock:
-        connect_kwargs["sock"] = sock
+        if sock is None and (server_cfg.get("direct_check") or server_cfg.get("fallback_jump")):
+            sock = _open_direct_socket(
+                server_cfg["host"], int(server_cfg.get("ssh_port", 22)), timeout
+            )
 
-    try:
-        client.connect(**connect_kwargs)
-    except Exception:
-        if sock is not None and hasattr(sock, "close"):
-            try:
-                sock.close()
-            except Exception:
-                pass
-        _close_ssh_client(client)
-        raise
+        connect_kwargs = dict(base_connect_kwargs)
+        if sock:
+            connect_kwargs["sock"] = sock
+
+        try:
+            client.connect(**connect_kwargs)
+        except Exception:
+            if sock is not None and hasattr(sock, "close"):
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+            _close_ssh_client(client)
+            raise
     # Enable keepalive to prevent stale connections
     transport = client.get_transport()
     if transport:

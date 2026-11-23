@@ -340,6 +340,7 @@ def test_get_ssh_client_negative_caches_failed_jump_hosts_and_continues_via_defa
             pass
 
     monkeypatch.setattr(m.paramiko, "SSHClient", _FakeSSHClient)
+    assert "JERSEY" not in m.DEFAULT_FALLBACK_JUMPS
     config = {
         "ssh_timeout": 1,
         "jump_neg_ttl": 180,
@@ -348,6 +349,7 @@ def test_get_ssh_client_negative_caches_failed_jump_hosts_and_continues_via_defa
             "STOCK": {"host": "193.148.59.31", "user": "dms", "jump": "TALLIN"},
             "TALLIN": {"host": "141.98.166.243", "user": "dms", "fallback_jump": "AEZA"},
             "AEZA": {"host": "89.22.236.42", "user": "dms", "fallback_jump": None},
+            "JERSEY": {"host": "85.209.134.77", "user": "dms", "fallback_jump": None},
             "TBILISI": {"host": "185.163.203.76", "user": "dms", "fallback_jump": None},
         },
     }

@@ -348,28 +348,28 @@ def test_get_ssh_client_negative_caches_failed_jump_hosts_and_continues_via_defa
             "STOCK": {"host": "193.148.59.31", "user": "dms", "jump": "TALLIN"},
             "TALLIN": {"host": "141.98.166.243", "user": "dms", "fallback_jump": "AEZA"},
             "AEZA": {"host": "89.22.236.42", "user": "dms", "fallback_jump": None},
-            "JERSEY": {"host": "85.209.134.77", "user": "dms", "fallback_jump": None},
+            "TBILISI": {"host": "185.163.203.76", "user": "dms", "fallback_jump": None},
         },
     }
     # First server: tries TALLIN (fails), tries AEZA (fails with No existing session),
-    # automatically continues to JERSEY from DEFAULT_FALLBACK_JUMPS even though AEZA.fallback_jump is None.
+    # automatically continues to TBILISI from DEFAULT_FALLBACK_JUMPS even though AEZA.fallback_jump is None.
     client1 = m._get_ssh_client("POLKA", config["servers"]["POLKA"], config)
     assert client1 is not None
     assert connected_hosts == [
         ("141.98.166.243", None),
         ("89.22.236.42", None),
-        ("85.209.134.77", None),
+        ("185.163.203.76", None),
         ("213.5.128.224", ("chan", ("213.5.128.224", 22))),
     ]
 
     # Second server within 180s TTL: skips TALLIN and AEZA immediately via negative cache
-    # and connects directly through JERSEY.
+    # and connects directly through TBILISI.
     connected_hosts.clear()
     now[0] = 1050.0
     client2 = m._get_ssh_client("STOCK", config["servers"]["STOCK"], config)
     assert client2 is not None
     assert connected_hosts == [
-        ("85.209.134.77", None),
+        ("185.163.203.76", None),
         ("193.148.59.31", ("chan", ("193.148.59.31", 22))),
     ]
 
@@ -388,10 +388,10 @@ def test_check_server_falls_back_to_jump_when_direct_probe_ok_but_ssh_connect_fa
     monkeypatch.setattr(m, "probe_direct", lambda server_cfg, timeout: None)
     monkeypatch.setattr(m, "_get_ssh_client", connect)
     monkeypatch.setattr(m.time, "sleep", lambda *_: None)
-    results = m.check_server("AEZA", dict(NODE, fallback_jump="JERSEY"), {"ssh_timeout": 1, "servers": {"JERSEY": {}}})
+    results = m.check_server("AEZA", dict(NODE, fallback_jump="TBILISI"), {"ssh_timeout": 1, "servers": {"TBILISI": {}}})
     status = {r[0]: r[1] for r in results}
     assert status == {"direct": "warning", "ssh": "ok"}
-    assert seen_jumps == [None, "JERSEY"]
+    assert seen_jumps == [None, "TBILISI"]
 
 
 def test_get_ssh_client_marks_direct_socket_with_direct_probe_tos(monkeypatch):

@@ -176,7 +176,6 @@ def load_config():
 DEFAULT_FALLBACK_JUMPS = (
     "TALLIN",
     "AEZA",
-    "JERSEY",
     "TBILISI",
     "EMMET",
     "POLKA",

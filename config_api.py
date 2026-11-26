@@ -24,6 +24,8 @@ def validate_config(cfg):
             errors.append(f"{name}: switched_off_ok must be true or false")
         if "direct_check" in srv and not isinstance(srv["direct_check"], bool):
             errors.append(f"{name}: direct_check must be true or false")
+        if "disk_check" in srv and not isinstance(srv["disk_check"], bool):
+            errors.append(f"{name}: disk_check must be true or false")
         fb = srv.get("fallback_jump")
         if fb is not None:
             fb_items = fb if isinstance(fb, list) else [fb]

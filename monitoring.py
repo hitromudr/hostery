@@ -42,13 +42,75 @@ def service_names(services):
     return [resolve_service(s)[0] for s in services]
 
 
+DISK_CHECK_NAME = "disk"
+# Above 80% of the fullest writable filesystem is a warning (yellow, no
+# incident, like `direct`); above 95% is a failure (red, incident, alert).
+# The owner's rule (2026-11-26) for every node in the fleet.
+DISK_WARN_PCT = 80
+DISK_CRIT_PCT = 95
+
+# Fullest writable filesystem, in percent, with its mount point. `-l` drops
+# network mounts, `-x` drops the pseudo filesystems that are always 0–1% or
+# meaningless, and the /proc/mounts pass drops read-only filesystems and
+# /dev/loop* images: an ISO or image mounted read-only cannot fill up, yet it
+# reads 100% and would red the node (the Pi keeps game ISOs under /mnt).
+DISK_COMMAND = (
+    "df -P -l -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs "
+    "-x ramfs 2>/dev/null | "
+    "awk 'FILENAME == ARGV[1] { n = split($4, o, \",\"); "
+    "for (j = 1; j <= n; j++) if (o[j] == \"ro\") ro[$2] = 1; next } "
+    "FNR > 1 && $1 !~ /^\\/dev\\/loop/ { "
+    "mp = $6; for (i = 7; i <= NF; i++) mp = mp \" \" $i; "
+    "if (mp in ro) next; "
+    "if ($5 + 0 > m) { m = $5 + 0; p = mp } } "
+    "END { printf \"%d\\t%s\\n\", m + 0, p }' /proc/mounts -"
+)
+
+
+def disk_check_enabled(server_cfg):
+    """Whether this node gets the built-in `disk` row. On by default.
+
+    A node that already carries its own check under the same name keeps it:
+    two rows named `disk` would collide on the (timestamp, server, service)
+    key and one would silently overwrite the other.
+    """
+    if not (server_cfg or {}).get("disk_check", True):
+        return False
+    # A `muted` entry without `disk_check: false` would otherwise leave the row
+    # running while the Muted panel claims it is off.
+    if DISK_CHECK_NAME in (server_cfg or {}).get("muted", []):
+        return False
+    taken = set(service_names(server_cfg.get("services", [])))
+    taken |= {c["name"] for c in server_cfg.get("custom_checks", []) if "name" in c}
+    return DISK_CHECK_NAME not in taken
+
+
 def configured_services(server_cfg):
     """Return all check names currently configured for a server."""
     custom_names = [c["name"] for c in server_cfg.get("custom_checks", []) if "name" in c]
     direct_names = (["direct"] if server_cfg.get("direct_check")
                     or server_cfg.get("fallback_jump") else [])
-    return (["ssh"] + direct_names
+    disk_names = [DISK_CHECK_NAME] if disk_check_enabled(server_cfg) else []
+    return (["ssh"] + direct_names + disk_names
             + service_names(server_cfg.get("services", [])) + custom_names)
+
+
+def parse_disk_usage(output):
+    """Parse `DISK_COMMAND` output into (percent, mount point)."""
+    parts = (output or "").split()
+    if not parts or not parts[0].lstrip("-").isdigit():
+        raise ValueError(f"no disk data: {output!r}")
+    return int(parts[0]), (parts[1] if len(parts) > 1 else "")
+
+
+def disk_status(pct, mount):
+    """Map used percent of the fullest filesystem to (status, error)."""
+    where = f" on {mount}" if mount else ""
+    if pct > DISK_CRIT_PCT:
+        return "fail", f"Disk {pct}% used{where}, over {DISK_CRIT_PCT}%"
+    if pct > DISK_WARN_PCT:
+        return "warning", f"Disk {pct}% used{where}, over {DISK_WARN_PCT}%"
+    return "ok", None
 
 
 def _eval_expect(expr, val, raw):
@@ -632,6 +694,8 @@ def check_server(server_name, server_cfg, config):
             results.append(("ssh", "off", str(last_err), elapsed))
             if direct_row:
                 results.append(("direct", "off", None, 0))
+            if disk_check_enabled(server_cfg):
+                results.append((DISK_CHECK_NAME, "off", None, 0))
             for entry in server_cfg.get("services", []):
                 svc, _ = resolve_service(entry)
                 results.append((svc, "off", None, 0))
@@ -643,6 +707,8 @@ def check_server(server_name, server_cfg, config):
         results.append(("ssh", "fail", str(last_err), elapsed))
         if direct_row:
             results.append(direct_row)
+        if disk_check_enabled(server_cfg):
+            results.append((DISK_CHECK_NAME, "unknown", None, 0))
         # Resolve each entry to its service NAME — entries may be dicts in the
         # config-driven model, and a dict can't be stored as a service key.
         for entry in server_cfg.get("services", []):
@@ -654,6 +720,22 @@ def check_server(server_name, server_cfg, config):
     results.append(("ssh", "ok", None, elapsed_ssh))
     if direct_row:
         results.append(direct_row)
+
+    # Disk usage of the fullest writable filesystem (2026-11-26, owner's rule):
+    # built in rather than a per-node custom check, so every node in the fleet
+    # gets the same 80% / 95% thresholds. A check that cannot read the numbers
+    # is a warning, not a silent green: an unreadable `df` must not look clean.
+    if disk_check_enabled(server_cfg):
+        disk_start = time.time()
+        try:
+            output = _ssh_exec(client, DISK_COMMAND, timeout=10)
+            pct, mount = parse_disk_usage(output)
+            status, error = disk_status(pct, mount)
+            results.append((DISK_CHECK_NAME, status, error,
+                            int((time.time() - disk_start) * 1000), pct))
+        except Exception as e:
+            results.append((DISK_CHECK_NAME, "warning", f"disk usage unknown: {e}",
+                            int((time.time() - disk_start) * 1000)))
 
     services = server_cfg.get("services", [])
     for entry in services:
@@ -1509,12 +1591,22 @@ def monitoring_mute():
     if not srv:
         return jsonify({"error": f"Server {server} not found"}), 404
 
-    names = service_names(srv.get("services", []))
-    if service not in names:
-        return jsonify({"status": "noop", "message": f"{service} not in {server} services"})
-    removed = next((s for s in srv.get("services", []) if resolve_service(s)[0] == service), service)
-    srv["services"] = [s for s in srv.get("services", []) if resolve_service(s)[0] != service]
-    srv["muted"] = srv.get("muted", []) + [removed]
+    muted_entry = None
+    if service == DISK_CHECK_NAME and disk_check_enabled(srv):
+        # The disk row is built in, not a service entry: muting it means
+        # switching the built-in check off for this node. The name still goes
+        # into `muted` so the Muted panel lists it and can restore it.
+        srv["disk_check"] = False
+        muted_entry = DISK_CHECK_NAME
+    else:
+        names = service_names(srv.get("services", []))
+        if service not in names:
+            return jsonify({"status": "noop", "message": f"{service} not in {server} services"})
+        muted_entry = next((s for s in srv.get("services", [])
+                            if resolve_service(s)[0] == service), service)
+        srv["services"] = [s for s in srv.get("services", [])
+                           if resolve_service(s)[0] != service]
+    srv["muted"] = srv.get("muted", []) + [muted_entry]
 
     # Resolve incidents and clean up check history for this service
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -1561,7 +1653,12 @@ def monitoring_unmute():
         return jsonify({"status": "noop", "message": f"{service} not muted on {server}"})
     entry = next((s for s in muted if resolve_service(s)[0] == service), service)
     srv["muted"] = [s for s in muted if resolve_service(s)[0] != service]
-    srv["services"] = srv.get("services", []) + [entry]
+    if service == DISK_CHECK_NAME and not isinstance(entry, dict):
+        # The built-in disk row has no service entry to move back — dropping
+        # the override is what turns it on again.
+        srv.pop("disk_check", None)
+    else:
+        srv["services"] = srv.get("services", []) + [entry]
 
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)

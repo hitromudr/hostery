@@ -105,7 +105,9 @@ def _run(monkeypatch, cfg, direct_ok):
     return {r[0]: r[1] for r in results}, seen
 
 
-NODE = {"host": "192.0.2.1", "user": "dms", "direct_check": True, "fallback_jump": "GESS"}
+# disk_check off: these cases are about routing, and _Client has no shell.
+NODE = {"host": "192.0.2.1", "user": "dms", "direct_check": True, "fallback_jump": "GESS",
+        "disk_check": False}
 
 
 def test_direct_ok_connects_without_the_jump(monkeypatch):
@@ -121,14 +123,16 @@ def test_only_around_the_block_is_alive_with_a_direct_warning(monkeypatch):
 
 
 def test_direct_check_alone_keeps_the_route_as_configured(monkeypatch):
-    cfg = {"host": "192.0.2.1", "user": "dms", "direct_check": True, "jump": "POLKA"}
+    cfg = {"host": "192.0.2.1", "user": "dms", "direct_check": True, "jump": "POLKA",
+           "disk_check": False}
     status, seen = _run(monkeypatch, cfg, direct_ok=False)
     assert status == {"direct": "warning", "ssh": "ok"}
     assert seen == ["POLKA"]
 
 
 def test_no_direct_row_unless_asked(monkeypatch):
-    status, seen = _run(monkeypatch, {"host": "192.0.2.1", "user": "dms"}, direct_ok=False)
+    status, seen = _run(monkeypatch, {"host": "192.0.2.1", "user": "dms", "disk_check": False},
+                        direct_ok=False)
     assert status == {"ssh": "ok"}
     assert seen == [None]
 
@@ -203,7 +207,7 @@ def test_status_api_reports_the_direct_row(tmp_path, monkeypatch):
 
 
 def test_status_api_has_no_direct_row_unless_asked(tmp_path, monkeypatch):
-    srv = _status_after_cycle(tmp_path, monkeypatch, {"host": "x", "user": "y"},
+    srv = _status_after_cycle(tmp_path, monkeypatch, {"host": "x", "user": "y", "disk_check": False},
                               [("ssh", "ok", None, 12)])
     assert set(srv["services"]) == {"ssh"}
 

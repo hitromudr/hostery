@@ -405,7 +405,7 @@ function renderMonServers(data) {
                 const ms = si.response_time_ms
                   ? `${si.response_time_ms}ms`
                   : "";
-                const labels = {ok: "Operational", fail: "Failed", inactive: "Inactive", warning: "Activating", unknown: "Unknown", off: "Switched off"};
+                const labels = {ok: "Operational", fail: "Failed", inactive: "Inactive", warning: "Warning", unknown: "Unknown", off: "Switched off"};
                 // The name leads: in the card it may be cut by the ellipsis.
                 const tipParts = [svc, labels[st] || st];
                 if (si.error) tipParts.push(si.error);
@@ -521,7 +521,7 @@ async function toggleSvcDetail(server, service) {
     ok: '<span style="color: var(--success-color);">Operational</span>',
     inactive: '<span style="color: var(--text-muted);">Inactive</span>',
     fail: '<span style="color: var(--danger-color);">Failed</span>',
-    warning: '<span style="color: var(--warning-color);">Activating</span>',
+    warning: '<span style="color: var(--warning-color);">Warning</span>',
     off: '<span style="color: var(--text-muted);">Switched off</span>',
   };
   const statusLabel = statusLabels[svcInfo.status] || '<span style="color: var(--text-muted);">Unknown</span>';
@@ -666,7 +666,7 @@ function showProblems(server) {
   }
   panel.dataset.service = "__problems";
 
-  const labels = {fail: "Failed", warning: "Activating"};
+  const labels = {fail: "Failed", warning: "Warning"};
 
   panel.innerHTML = `
     <div class="svc-detail-content">

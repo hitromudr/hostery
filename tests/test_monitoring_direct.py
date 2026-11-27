@@ -619,7 +619,8 @@ def test_check_server_hitro_rejects_mac_bastion_mirror_and_reconnects_via_mac_tu
     assert opened_channels == [("77.232.37.210", ("192.168.6.37", 22))]
     # No service checks may ever execute on MAC_MIRROR
     assert all(target == "REAL_HITRO" for target, _ in service_cmds_on)
-    assert len(service_cmds_on) == 2
+    assert any("remail" in cmd for _, cmd in service_cmds_on)
+    assert any("ssh-tun-roy" in cmd for _, cmd in service_cmds_on)
 
 
 def test_check_server_hitro_reports_ssh_fail_without_polling_mirror_when_real_hitro_down(monkeypatch):

@@ -282,6 +282,7 @@ def _target_dest_for_jump(server_name, server_cfg, cur_jump, jump_cfg):
         cur_jump == "MAC" or (jump_cfg and jump_cfg.get("host") == MAC_PUBLIC_HOST)
     ):
         host = server_cfg.get("real_tun_host", HITRO_REAL_TUN_HOST)
+        port = int(server_cfg.get("real_tun_port", 22))
     return (host, port)
 
 

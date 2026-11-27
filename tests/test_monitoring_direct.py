@@ -518,4 +518,179 @@ def test_get_ssh_client_falls_back_when_target_handshake_over_jump_channel_drops
     ]
 
 
+def test_check_server_hitro_rejects_mac_bastion_mirror_and_reconnects_via_mac_tun6(monkeypatch):
+    """Инцидент 27.11.2026 18:54:01 UTC: probe_direct('HITRO') с IP_TOS=0x04 прошёл,
+    но в следующую секунду на провале аплинка соединение _get_ssh_client('HITRO')
+    попало через hitro-ssh-detour на sshd-bastion узла MAC (v1091872.macloud.host),
+    где нет сервисов HITRO (cas_clients, remail, ssh-tun-roy), вызвав 15 ложных
+    алертов HITRO:*. Монитор обязан распознать зеркало бастиона (/etc/ssh/hitro_host_keys),
+    закрыть его и переподключиться к настоящему HITRO через MAC по tun6 (192.168.6.37:22)."""
+    m.clear_jump_neg_cache()
+    opened_channels = []
+    service_cmds_on = []
+
+    class _FakeStdout:
+        def __init__(self, text):
+            self._data = text.encode()
+
+        def read(self):
+            return self._data
+
+    class _FakeChan:
+        def __init__(self, jump_host, dest):
+            self.jump_host = jump_host
+            self.dest = dest
+
+        def close(self):
+            pass
+
+    class _FakeTransport:
+        def __init__(self, host):
+            self.host = host
+
+        def open_channel(self, kind, dest, local, timeout=None):
+            opened_channels.append((self.host, dest))
+            return _FakeChan(self.host, dest)
+
+        def set_keepalive(self, interval):
+            pass
+
+    class _FakeSSHClient:
+        def __init__(self):
+            self.host = None
+            self.sock = None
+
+        def set_missing_host_key_policy(self, policy):
+            pass
+
+        def connect(self, hostname=None, username=None, key_filename=None, timeout=None, port=22, sock=None):
+            self.host = hostname
+            self.sock = sock
+
+        def exec_command(self, cmd, timeout=8):
+            is_via_mac_tun6 = isinstance(self.sock, _FakeChan) and self.sock.dest == ("192.168.6.37", 22)
+            if "hitro_host_keys" in cmd:
+                if not is_via_mac_tun6:
+                    # Direct connection landed on MAC sshd-bastion mirror!
+                    return None, _FakeStdout("MIRROR:v1091872.macloud.host\n"), None
+                return None, _FakeStdout("REAL:hitromudr.ru\n"), None
+            target_id = "REAL_HITRO" if is_via_mac_tun6 else "MAC_MIRROR"
+            service_cmds_on.append((target_id, cmd))
+            return None, _FakeStdout("active\n"), None
+
+        def get_transport(self):
+            return _FakeTransport(self.host)
+
+        def close(self):
+            pass
+
+    class _DummySock:
+        def close(self):
+            pass
+
+    monkeypatch.setattr(m, "probe_direct", lambda server_cfg, timeout: None)
+    monkeypatch.setattr(m, "_open_direct_socket", lambda host, port, timeout: _DummySock())
+    monkeypatch.setattr(m.paramiko, "SSHClient", _FakeSSHClient)
+    monkeypatch.setattr(m.time, "sleep", lambda *_: None)
+
+    config = {
+        "ssh_timeout": 1,
+        "ssh_retries": 0,
+        "servers": {
+            "HITRO": {
+                "host": "185.250.47.112",
+                "user": "root",
+                "direct_check": True,
+                "fallback_jump": "TALLIN",
+                "services": ["remail", "ssh-tun-roy"],
+            },
+            "MAC": {"host": "77.232.37.210", "user": "dms"},
+            "TALLIN": {"host": "141.98.166.243", "user": "dms"},
+        },
+    }
+    results = m.check_server("HITRO", config["servers"]["HITRO"], config)
+    by_name = {r[0]: r for r in results}
+    assert by_name["ssh"][1] == "ok"
+    assert by_name["direct"][1] == "warning"
+    assert "bastion mirror v1091872.macloud.host" in by_name["direct"][2]
+    assert by_name["remail"][1] == "ok"
+    assert by_name["ssh-tun-roy"][1] == "ok"
+    # Channel from MAC must target HITRO's tun6 IP 192.168.6.37:22, not 185.250.47.112:22
+    assert opened_channels == [("77.232.37.210", ("192.168.6.37", 22))]
+    # No service checks may ever execute on MAC_MIRROR
+    assert all(target == "REAL_HITRO" for target, _ in service_cmds_on)
+    assert len(service_cmds_on) == 2
+
+
+def test_check_server_hitro_reports_ssh_fail_without_polling_mirror_when_real_hitro_down(monkeypatch):
+    """Если отвечает только зеркало бастиона MAC, а настоящий HITRO недоступен
+    ни по tun6, ни через TALLIN, check_server обязан вернуть ssh=fail и
+    services=unknown, никогда не запуская проверки сервисов HITRO на MAC."""
+    m.clear_jump_neg_cache()
+    service_cmds = []
+
+    class _FakeStdout:
+        def __init__(self, text):
+            self._data = text.encode()
+
+        def read(self):
+            return self._data
+
+    class _FakeTransport:
+        def open_channel(self, kind, dest, local, timeout=None):
+            raise m.paramiko.ChannelException(2, "Connect failed")
+
+        def set_keepalive(self, interval):
+            pass
+
+    class _FakeSSHClient:
+        def set_missing_host_key_policy(self, policy):
+            pass
+
+        def connect(self, **kwargs):
+            pass
+
+        def exec_command(self, cmd, timeout=8):
+            if "hitro_host_keys" in cmd:
+                return None, _FakeStdout("MIRROR:v1091872.macloud.host\n"), None
+            service_cmds.append(cmd)
+            return None, _FakeStdout("inactive\n"), None
+
+        def get_transport(self):
+            return _FakeTransport()
+
+        def close(self):
+            pass
+
+    class _DummySock:
+        def close(self):
+            pass
+
+    monkeypatch.setattr(m, "probe_direct", lambda server_cfg, timeout: None)
+    monkeypatch.setattr(m, "_open_direct_socket", lambda host, port, timeout: _DummySock())
+    monkeypatch.setattr(m.paramiko, "SSHClient", _FakeSSHClient)
+    monkeypatch.setattr(m.time, "sleep", lambda *_: None)
+
+    config = {
+        "ssh_timeout": 1,
+        "ssh_retries": 0,
+        "servers": {
+            "HITRO": {
+                "host": "185.250.47.112",
+                "user": "root",
+                "direct_check": True,
+                "fallback_jump": "TALLIN",
+                "services": ["remail"],
+            },
+            "MAC": {"host": "77.232.37.210", "user": "dms"},
+            "TALLIN": {"host": "141.98.166.243", "user": "dms"},
+        },
+    }
+    results = m.check_server("HITRO", config["servers"]["HITRO"], config)
+    by_name = {r[0]: r for r in results}
+    assert by_name["ssh"][1] == "fail"
+    assert by_name["remail"][1] == "unknown"
+    assert service_cmds == []
+
+
 

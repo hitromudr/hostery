@@ -244,10 +244,69 @@ DEFAULT_FALLBACK_JUMPS = (
     "STOCK",
     "GESS",
     "FINKA",
+    "MAC",
 )
+HITRO_PUBLIC_HOST = "185.250.47.112"
+HITRO_REAL_TUN_HOST = "192.168.6.37"
+MAC_PUBLIC_HOST = "77.232.37.210"
 JUMP_NEG_TTL = 180.0
 _JUMP_NEG_CACHE = {}
 _JUMP_NEG_LOCK = threading.Lock()
+
+
+class BastionMirrorError(Exception):
+    """Connection intended for HITRO landed on the MAC bastion mirror (sshd-bastion)."""
+
+
+def _is_hitro_target(server_name, server_cfg):
+    if (server_cfg or {}).get("allow_bastion_mirror"):
+        return False
+    if (server_cfg or {}).get("reject_bastion_mirror"):
+        return True
+    return server_name == "HITRO" or (
+        server_name != "MAC" and (server_cfg or {}).get("host") == HITRO_PUBLIC_HOST
+    )
+
+
+def _target_dest_for_jump(server_name, server_cfg, cur_jump, jump_cfg):
+    """Resolve the direct-tcpip destination (host, port) from a jump host.
+
+    On MAC (77.232.37.210), outbound TCP to HITRO's public IP 185.250.47.112:22
+    without IP_TOS=0x04 is DNATed by iptables OUTPUT back to MAC's local
+    127.0.0.1:22022 (sshd-bastion mirror). Reaching the real HITRO through MAC
+    must therefore use HITRO's tun6 address (192.168.6.37:22).
+    """
+    port = int(server_cfg.get("ssh_port", 22))
+    host = server_cfg["host"]
+    if _is_hitro_target(server_name, server_cfg) and (
+        cur_jump == "MAC" or (jump_cfg and jump_cfg.get("host") == MAC_PUBLIC_HOST)
+    ):
+        host = server_cfg.get("real_tun_host", HITRO_REAL_TUN_HOST)
+    return (host, port)
+
+
+def _verify_not_bastion_mirror(server_name, server_cfg, client, timeout=8):
+    """Ensure a connection to HITRO did not land on the MAC sshd-bastion mirror.
+
+    On MAC, sshd-bastion serves HITRO's host keys from /etc/ssh/hitro_host_keys.
+    If local detour (hitro-ssh-detour) or transit DNAT routes HITRO:22 to MAC,
+    running HITRO service checks on MAC produces 15 false service failures.
+    """
+    if not _is_hitro_target(server_name, server_cfg):
+        return
+    exec_fn = getattr(client, "exec_command", None)
+    if not callable(exec_fn):
+        return
+    _, stdout, _ = exec_fn(
+        "test -d /etc/ssh/hitro_host_keys && echo MIRROR:$(hostname) || echo REAL:$(hostname)",
+        timeout=timeout,
+    )
+    out = stdout.read().decode(errors="replace").strip()
+    if out.startswith("MIRROR:"):
+        mirror_host = out.split(":", 1)[1].strip() or "MAC"
+        raise BastionMirrorError(
+            f"connected to bastion mirror {mirror_host} instead of real HITRO"
+        )
 
 
 def clear_jump_neg_cache():
@@ -320,7 +379,6 @@ def _get_ssh_client(server_name, server_cfg, config):
         # fallback_jump (or other external jump hosts exist in config), follow
         # the full fallback chain without looping and skip recently failed jump
         # hosts via negative cache (JUMP_NEG_TTL).
-        dest = (server_cfg["host"], int(server_cfg.get("ssh_port", 22)))
         local = ("127.0.0.1", 0)
         servers = config.get("servers", {})
         neg_ttl = float(config.get("jump_neg_ttl", JUMP_NEG_TTL))
@@ -328,6 +386,8 @@ def _get_ssh_client(server_name, server_cfg, config):
 
         queue = _expand_jump_names(jump_name)
         queue.extend(_expand_jump_names(server_cfg.get("fallback_jump")))
+        if _is_hitro_target(server_name, server_cfg) and "MAC" in servers and "MAC" not in queue:
+            queue.append("MAC")
         default_jumps = config.get("default_fallback_jumps", DEFAULT_FALLBACK_JUMPS)
 
         seen_jumps = {server_name}
@@ -354,8 +414,9 @@ def _get_ssh_client(server_name, server_cfg, config):
                 if cand not in seen_jumps:
                     queue.append(cand)
 
+            cur_dest = _target_dest_for_jump(server_name, server_cfg, cur_jump, jump_cfg)
             host_key = (cur_jump, jump_cfg.get("host"))
-            chan_key = (cur_jump, jump_cfg.get("host"), dest)
+            chan_key = (cur_jump, jump_cfg.get("host"), cur_dest)
             cached_host_err = _get_jump_neg_cache(host_key, now, neg_ttl)
             if cached_host_err is not None:
                 last_jump_err = (cur_jump, cached_host_err)
@@ -399,10 +460,11 @@ def _get_ssh_client(server_name, server_cfg, config):
                 # keeps retrying the SYN to dest:22 for ~140s on a transient leg loss
                 # (e.g. POLKA->EMMET), blocking the worker the whole time before
                 # raising ChannelException. Fail fast instead.
-                chan = transport.open_channel("direct-tcpip", dest, local, timeout=timeout)
+                chan = transport.open_channel("direct-tcpip", cur_dest, local, timeout=timeout)
                 cand_client = paramiko.SSHClient()
                 cand_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 cand_client.connect(**base_connect_kwargs, sock=chan)
+                _verify_not_bastion_mirror(server_name, server_cfg, cand_client, timeout=timeout)
                 _clear_jump_neg_cache_key(chan_key)
                 jump_client = jc
                 client = cand_client
@@ -468,6 +530,7 @@ def _get_ssh_client(server_name, server_cfg, config):
 
         try:
             client.connect(**connect_kwargs)
+            _verify_not_bastion_mirror(server_name, server_cfg, client, timeout=timeout)
         except Exception:
             if sock is not None and hasattr(sock, "close"):
                 try:
@@ -674,15 +737,23 @@ def check_server(server_name, server_cfg, config):
         except Exception as e:
             last_err = e
             fallback = server_cfg.get("fallback_jump")
-            if fallback and not route_cfg.get("jump"):
-                route_cfg = dict(server_cfg, jump=fallback)
-                direct_row = ("direct", "warning", f"not reachable directly: {e}",
-                              int((time.time() - start) * 1000))
-                try:
-                    client = _get_ssh_client(server_name, route_cfg, config)
-                    break
-                except Exception as fb_err:
-                    last_err = fb_err
+            if not route_cfg.get("jump"):
+                fb_jumps = []
+                if isinstance(e, BastionMirrorError) and "MAC" in config.get("servers", {}):
+                    fb_jumps.append("MAC")
+                for cand in _expand_jump_names(fallback):
+                    if cand not in fb_jumps:
+                        fb_jumps.append(cand)
+                if fb_jumps:
+                    jump_val = fb_jumps[0] if len(fb_jumps) == 1 else fb_jumps
+                    route_cfg = dict(server_cfg, jump=jump_val)
+                    direct_row = ("direct", "warning", f"not reachable directly: {e}",
+                                  int((time.time() - start) * 1000))
+                    try:
+                        client = _get_ssh_client(server_name, route_cfg, config)
+                        break
+                    except Exception as fb_err:
+                        last_err = fb_err
             if attempt < retries:
                 time.sleep(retry_delay)
     if client is None:
